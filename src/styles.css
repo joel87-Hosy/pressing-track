@@ -1,7 +1,20 @@
 :root {
   font-family: Arial, Helvetica, sans-serif;
-  color: #111827;
-  background: #f8fafc;
+  color: #102033;
+  background: #eef4f8;
+  --ink: #102033;
+  --muted: #52657a;
+  --line: #c7d2df;
+  --surface: #ffffff;
+  --surface-soft: #f5f8fb;
+  --blue: #155eef;
+  --blue-dark: #0f46b8;
+  --green: #13a05f;
+  --green-dark: #0f7a49;
+  --amber: #f8c247;
+  --amber-soft: #fff3cd;
+  --red: #dc2626;
+  --red-soft: #fee2e2;
 }
 
 * {
@@ -12,7 +25,8 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #f8fafc;
+  background:
+    linear-gradient(180deg, #f7fbff 0%, #eef4f8 100%);
   overflow: hidden;
 }
 
@@ -23,6 +37,19 @@ input {
 
 button {
   touch-action: manipulation;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 120ms ease;
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 4px solid rgba(21, 94, 239, 0.28);
+  outline-offset: 3px;
 }
 
 .pos-shell {
@@ -35,10 +62,11 @@ button {
 
 .selection-panel,
 .ticket-panel {
-  background: #ffffff;
-  border: 2px solid #d1d5db;
+  background: var(--surface);
+  border: 2px solid var(--line);
   border-radius: 8px;
   padding: 22px;
+  box-shadow: 0 12px 30px rgba(16, 32, 51, 0.08);
 }
 
 .selection-panel {
@@ -56,7 +84,7 @@ button {
   min-height: 0;
   max-height: calc(100vh - 40px);
   overflow-y: auto;
-  scrollbar-color: #111827 #e5e7eb;
+  scrollbar-color: var(--ink) #e5e7eb;
   scrollbar-width: thin;
 }
 
@@ -80,7 +108,7 @@ button {
 
 .eyebrow {
   margin: 0 0 4px;
-  color: #475569;
+  color: var(--muted);
   font-size: 1.05rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -104,7 +132,7 @@ h2 {
 .operator-badge,
 .section-heading span {
   border-radius: 8px;
-  background: #111827;
+  background: var(--ink);
   color: #ffffff;
   font-size: 1.2rem;
   font-weight: 800;
@@ -112,12 +140,12 @@ h2 {
 }
 
 .section-heading span {
-  background: #e0f2fe;
-  color: #075985;
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
 .section-heading p {
-  color: #475569;
+  color: var(--muted);
   font-size: 1.1rem;
   font-weight: 800;
   margin-top: 5px;
@@ -128,7 +156,7 @@ h2 {
   min-height: 0;
   overflow-y: auto;
   padding: 2px 6px 8px 2px;
-  scrollbar-color: #111827 #e5e7eb;
+  scrollbar-color: var(--ink) #e5e7eb;
   scrollbar-width: thin;
 }
 
@@ -146,15 +174,22 @@ h2 {
     "icon price";
   align-items: center;
   min-height: 118px;
-  border: 2px solid #111827;
+  border: 2px solid var(--ink);
   border-radius: 8px;
-  background: #ffffff;
-  color: #111827;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
+  color: var(--ink);
   column-gap: 12px;
   padding: 14px;
   cursor: pointer;
   text-align: left;
-  box-shadow: 0 4px 0 #111827;
+  box-shadow: 0 4px 0 var(--ink), 0 8px 18px rgba(16, 32, 51, 0.08);
+}
+
+.article-button:hover {
+  border-color: var(--blue);
+  background: #eff6ff;
+  box-shadow: 0 4px 0 var(--blue-dark), 0 10px 22px rgba(21, 94, 239, 0.16);
+  transform: translateY(-1px);
 }
 
 .article-button:active,
@@ -175,7 +210,7 @@ h2 {
   height: 58px;
   place-items: center;
   border-radius: 8px;
-  background: #111827;
+  background: linear-gradient(135deg, var(--ink), #27445f);
   color: #ffffff;
   font-size: 1.35rem;
   font-weight: 1000;
@@ -197,7 +232,7 @@ h2 {
 .article-button strong {
   grid-area: price;
   align-self: end;
-  color: #065f46;
+  color: var(--green-dark);
   font-size: 1.12rem;
 }
 
@@ -206,13 +241,20 @@ h2 {
 .line-actions button {
   border: 0;
   border-radius: 8px;
-  background: #fee2e2;
+  background: var(--red-soft);
   color: #991b1b;
   cursor: pointer;
   font-size: 1.15rem;
   font-weight: 900;
   min-height: 52px;
   padding: 10px 18px;
+}
+
+.clear-button:hover,
+.modal-title-row button:hover,
+.line-actions button:hover {
+  background: var(--red);
+  color: #ffffff;
 }
 
 .ticket-list {
@@ -229,9 +271,9 @@ h2 {
   display: grid;
   min-height: 190px;
   place-items: center;
-  border: 3px dashed #cbd5e1;
+  border: 3px dashed var(--line);
   border-radius: 8px;
-  color: #475569;
+  color: var(--muted);
   font-size: 1.35rem;
   font-weight: 800;
   padding: 18px;
@@ -243,10 +285,17 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border: 2px solid #cbd5e1;
+  border: 2px solid var(--line);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--surface-soft);
   padding: 14px;
+}
+
+.ticket-line:hover,
+.history-item:hover,
+.detail-card:hover {
+  border-color: #93b4d8;
+  background: #f0f7ff;
 }
 
 .line-main {
@@ -262,8 +311,8 @@ h2 {
   height: 56px;
   place-items: center;
   border-radius: 8px;
-  background: #e0f2fe;
-  color: #075985;
+  background: #dbeafe;
+  color: #1d4ed8;
   flex: 0 0 auto;
   font-size: 1rem;
   font-weight: 1000;
@@ -275,7 +324,7 @@ h2 {
 }
 
 .line-main p {
-  color: #475569;
+  color: var(--muted);
   font-size: 1.08rem;
   font-weight: 800;
 }
@@ -296,14 +345,14 @@ h2 {
 }
 
 .total-row {
-  border-top: 3px solid #111827;
+  border-top: 3px solid var(--ink);
   padding-top: 16px;
   font-size: 1.7rem;
   font-weight: 900;
 }
 
 .total-row strong {
-  color: #047857;
+  color: var(--green-dark);
   font-size: 2rem;
 }
 
@@ -315,13 +364,18 @@ h2 {
 .phone-display {
   width: 100%;
   min-height: 70px;
-  border: 3px solid #111827;
+  border: 3px solid var(--ink);
   border-radius: 8px;
   background: #ffffff;
-  color: #111827;
+  color: var(--ink);
   font-size: 2rem;
   font-weight: 900;
   padding: 12px 16px;
+}
+
+.phone-display:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px rgba(21, 94, 239, 0.12);
 }
 
 .keypad {
@@ -332,26 +386,38 @@ h2 {
 
 .key {
   min-height: 68px;
-  border: 2px solid #111827;
+  border: 2px solid var(--ink);
   border-radius: 8px;
-  background: #111827;
+  background: var(--ink);
   color: #ffffff;
   cursor: pointer;
   font-size: 1.7rem;
   font-weight: 900;
 }
 
+.key:hover {
+  background: var(--blue);
+  border-color: var(--blue);
+  box-shadow: 0 6px 16px rgba(21, 94, 239, 0.22);
+}
+
 .utility-key {
   background: #e5e7eb;
-  color: #111827;
+  color: var(--ink);
   font-size: 1.15rem;
+}
+
+.utility-key:hover {
+  background: #cbd5e1;
+  border-color: #64748b;
+  color: var(--ink);
 }
 
 .validate-button {
   min-height: 94px;
   border: 0;
   border-radius: 8px;
-  background: #16a34a;
+  background: var(--green);
   color: #ffffff;
   cursor: pointer;
   font-size: 1.35rem;
@@ -365,10 +431,17 @@ h2 {
   cursor: not-allowed;
 }
 
+.validate-button:not(:disabled):hover,
+.add-button:hover {
+  background: var(--green-dark);
+  box-shadow: 0 10px 24px rgba(19, 160, 95, 0.24);
+  transform: translateY(-1px);
+}
+
 .confirmation {
   display: grid;
   gap: 10px;
-  border: 3px solid #15803d;
+  border: 3px solid var(--green-dark);
   border-radius: 8px;
   background: #f0fdf4;
   padding: 14px;
@@ -397,7 +470,7 @@ h2 {
 .history-panel {
   display: grid;
   gap: 12px;
-  border-top: 3px solid #111827;
+  border-top: 3px solid var(--ink);
   padding-top: 16px;
 }
 
@@ -407,7 +480,7 @@ h2 {
   height: 54px;
   place-items: center;
   border-radius: 8px;
-  background: #111827;
+  background: var(--ink);
   color: #ffffff;
   font-size: 1.35rem;
 }
@@ -443,17 +516,28 @@ h2 {
 
 .period-tab {
   min-height: 56px;
-  border: 2px solid #111827;
+  border: 2px solid var(--ink);
   border-radius: 8px;
   background: #ffffff;
-  color: #111827;
+  color: var(--ink);
   cursor: pointer;
   font-size: 1.05rem;
   font-weight: 1000;
 }
 
 .period-tab.active {
-  background: #111827;
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.period-tab:hover {
+  background: #dbeafe;
+  border-color: var(--blue);
+  color: var(--blue-dark);
+}
+
+.period-tab.active:hover {
+  background: var(--blue);
   color: #ffffff;
 }
 
@@ -466,9 +550,9 @@ h2 {
 }
 
 .empty-history {
-  border: 2px dashed #cbd5e1;
+  border: 2px dashed var(--line);
   border-radius: 8px;
-  color: #475569;
+  color: var(--muted);
   font-size: 1.05rem;
   font-weight: 900;
   padding: 16px;
@@ -478,9 +562,9 @@ h2 {
 .history-item {
   display: grid;
   gap: 8px;
-  border: 2px solid #cbd5e1;
+  border: 2px solid var(--line);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--surface-soft);
   padding: 12px;
 }
 
@@ -498,7 +582,7 @@ h2 {
 
 .history-item span,
 .history-item p {
-  color: #475569;
+  color: var(--muted);
   font-size: 0.98rem;
   font-weight: 900;
 }
@@ -511,7 +595,7 @@ h2 {
 }
 
 .history-item footer strong {
-  color: #047857;
+  color: var(--green-dark);
 }
 
 .modal-backdrop {
@@ -529,7 +613,7 @@ h2 {
   max-height: calc(100vh - 40px);
   overflow-y: auto;
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--surface);
   padding: 24px;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
 }
@@ -540,7 +624,7 @@ h2 {
   height: 48px;
   place-items: center;
   border-radius: 8px;
-  background: #111827;
+  background: var(--ink);
   color: #ffffff;
   font-size: 1.1rem;
   vertical-align: middle;
@@ -563,14 +647,20 @@ h2 {
   gap: 6px;
   place-items: center;
   min-height: 112px;
-  border: 3px solid #111827;
+  border: 3px solid var(--ink);
   border-radius: 8px;
-  background: #fef3c7;
-  color: #111827;
+  background: var(--amber-soft);
+  color: var(--ink);
   cursor: pointer;
   font-size: 1.45rem;
   font-weight: 1000;
   padding: 16px;
+}
+
+.reserve-button:hover {
+  border-color: #b7791f;
+  background: #ffe8a3;
+  box-shadow: 0 8px 18px rgba(183, 121, 31, 0.18);
 }
 
 .reserve-button span {
@@ -584,7 +674,7 @@ h2 {
 }
 
 .reserve-button.selected {
-  background: #111827;
+  background: var(--ink);
   color: #ffffff;
 }
 
@@ -598,6 +688,11 @@ h2 {
   color: #14532d;
 }
 
+.ras-button:hover {
+  border-color: var(--green-dark);
+  background: #bbf7d0;
+}
+
 .ras-button span {
   color: #14532d;
 }
@@ -606,12 +701,17 @@ h2 {
   min-height: 78px;
   border: 0;
   border-radius: 8px;
-  background: #2563eb;
+  background: var(--blue);
   color: #ffffff;
   cursor: pointer;
   font-size: 1.3rem;
   font-weight: 1000;
   padding: 16px;
+}
+
+.continue-button:not(:disabled):hover {
+  background: var(--blue-dark);
+  box-shadow: 0 10px 24px rgba(21, 94, 239, 0.24);
 }
 
 .continue-button:disabled {
@@ -627,8 +727,8 @@ h2 {
 
 .selected-reserve {
   border-radius: 8px;
-  background: #fef3c7;
-  color: #111827;
+  background: var(--amber-soft);
+  color: var(--ink);
   font-size: 1.25rem;
   font-weight: 900;
   padding: 14px 16px;
@@ -642,7 +742,7 @@ h2 {
 .detail-group p,
 .quantity-group p,
 .text-fields label {
-  color: #111827;
+  color: var(--ink);
   font-size: 1.18rem;
   font-weight: 1000;
 }
@@ -660,17 +760,30 @@ h2 {
 
 .quantity-button {
   min-height: 64px;
-  border: 2px solid #111827;
+  border: 2px solid var(--ink);
   border-radius: 8px;
   background: #ffffff;
-  color: #111827;
+  color: var(--ink);
   cursor: pointer;
   font-size: 1.45rem;
   font-weight: 1000;
 }
 
 .quantity-button.selected {
-  background: #111827;
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.quantity-button:hover,
+.detail-pill:hover {
+  border-color: var(--blue);
+  background: #eff6ff;
+  color: var(--blue-dark);
+}
+
+.quantity-button.selected:hover,
+.detail-pill.selected:hover {
+  background: var(--blue);
   color: #ffffff;
 }
 
@@ -682,9 +795,9 @@ h2 {
 .detail-card {
   display: grid;
   gap: 16px;
-  border: 2px solid #cbd5e1;
+  border: 2px solid var(--line);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--surface-soft);
   padding: 16px;
 }
 
@@ -700,7 +813,7 @@ h2 {
   height: 46px;
   place-items: center;
   border-radius: 8px;
-  background: #111827;
+  background: var(--ink);
   color: #ffffff;
   font-size: 1rem;
   font-weight: 1000;
@@ -718,10 +831,10 @@ h2 {
 
 .detail-pill {
   min-height: 58px;
-  border: 2px solid #cbd5e1;
+  border: 2px solid var(--line);
   border-radius: 8px;
   background: #ffffff;
-  color: #111827;
+  color: var(--ink);
   cursor: pointer;
   font-size: 1.05rem;
   font-weight: 900;
@@ -729,8 +842,8 @@ h2 {
 }
 
 .detail-pill.selected {
-  border-color: #111827;
-  background: #111827;
+  border-color: var(--ink);
+  background: var(--ink);
   color: #ffffff;
 }
 
@@ -747,11 +860,16 @@ h2 {
 
 .text-fields input {
   min-height: 62px;
-  border: 3px solid #111827;
+  border: 3px solid var(--ink);
   border-radius: 8px;
   font-size: 1.15rem;
   font-weight: 800;
   padding: 12px 14px;
+}
+
+.text-fields input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px rgba(21, 94, 239, 0.12);
 }
 
 .modal-actions {
@@ -773,12 +891,16 @@ h2 {
 
 .back-button {
   background: #e5e7eb;
-  color: #111827;
+  color: var(--ink);
 }
 
 .add-button {
-  background: #16a34a;
+  background: var(--green);
   color: #ffffff;
+}
+
+.back-button:hover {
+  background: #cbd5e1;
 }
 
 @media (max-width: 980px) {
