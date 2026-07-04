@@ -114,6 +114,59 @@ function formatDateTime(dateValue) {
   }).format(new Date(dateValue));
 }
 
+function normalizeWhatsAppPhone(phoneValue) {
+  const digits = phoneValue.replace(/\D/g, "");
+
+  if (digits.startsWith("00")) {
+    return digits.slice(2);
+  }
+
+  if (digits.startsWith("225")) {
+    return digits;
+  }
+
+  return `225${digits}`;
+}
+
+function buildArticleSummary(item, index) {
+  const detailParts = [
+    item.details.color,
+    item.details.fabric,
+    item.details.pattern,
+    item.details.design,
+    item.details.brand !== "Non precise" ? item.details.brand : ""
+  ].filter(Boolean);
+
+  const articleName =
+    item.copyTotal > 1 ? `${item.name} ${item.copyNumber}/${item.copyTotal}` : item.name;
+
+  return [
+    `${index + 1}. ${articleName}`,
+    `   Reserve(s): ${item.reserve}`,
+    `   Details: ${detailParts.join(" - ")}`,
+    item.details.note ? `   Note: ${item.details.note}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildWhatsAppMessage({ ticketNumber, readyDate, total, items }) {
+  return [
+    "Bonjour, vos articles ont bien ete deposes au pressing.",
+    "",
+    `Ticket: ${ticketNumber}`,
+    "Statut: IN_PROCESSING",
+    `Date prevue de retrait: ${readyDate}`,
+    "",
+    "Articles:",
+    items.map(buildArticleSummary).join("\n\n"),
+    "",
+    `Total: ${formatMoney(total)}`,
+    "",
+    "Merci pour votre confiance."
+  ].join("\n");
+}
+
 function toDatabaseTicket(order) {
   return {
     id: order.id,
@@ -339,18 +392,25 @@ function App() {
 
     const readyDate = getReadyDate();
     const createdAt = new Date().toISOString();
-    const message = `Bonjour, vos articles (Ticket ${ticketNumber}) ont bien ete deposes au pressing. Prets le ${readyDate}. Total: ${formatMoney(total)}.`;
+    const whatsappPhone = normalizeWhatsAppPhone(phone);
+    const message = buildWhatsAppMessage({
+      ticketNumber,
+      readyDate,
+      total,
+      items: ticketItems
+    });
     const order = {
       id: crypto.randomUUID(),
       ticketNumber,
       status: "IN_PROCESSING",
       createdAt,
       clientPhone: phone,
+      whatsappPhone,
       total,
       itemCount: ticketItems.length,
       items: ticketItems,
       readyDate,
-      whatsappUrl: `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
+      whatsappUrl: `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(message)}`,
       message
     };
 
