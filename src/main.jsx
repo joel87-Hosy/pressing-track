@@ -87,6 +87,14 @@ function getStoredHistory() {
   }
 }
 
+function getStoredArticlePrices() {
+  try {
+    return JSON.parse(localStorage.getItem("pressingtrack-article-prices")) || {};
+  } catch {
+    return {};
+  }
+}
+
 function getWeekKey(date) {
   const current = new Date(date);
   const firstDay = new Date(current.getFullYear(), 0, 1);
@@ -229,6 +237,8 @@ function DetailPills({ label, value, options, onChange }) {
 }
 
 function App() {
+  const [articlePrices, setArticlePrices] = useState(getStoredArticlePrices);
+  const [isPriceEditorOpen, setIsPriceEditorOpen] = useState(false);
   const [ticketItems, setTicketItems] = useState([]);
   const [selectedArticle, setSelectedArticle] = useState(null);
   const [selectedReserves, setSelectedReserves] = useState([]);
@@ -247,6 +257,14 @@ function App() {
   const total = useMemo(
     () => ticketItems.reduce((sum, item) => sum + item.price, 0),
     [ticketItems]
+  );
+  const pricedArticles = useMemo(
+    () =>
+      MOCK_ARTICLES.map((article) => ({
+        ...article,
+        price: articlePrices[article.id] ?? article.price
+      })),
+    [articlePrices]
   );
 
   const canValidate = ticketItems.length > 0 && phone.length >= 8;
@@ -271,6 +289,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem("pressingtrack-ticket-history", JSON.stringify(orderHistory));
   }, [orderHistory]);
+
+  useEffect(() => {
+    localStorage.setItem("pressingtrack-article-prices", JSON.stringify(articlePrices));
+  }, [articlePrices]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -301,6 +323,33 @@ function App() {
     loadTickets();
   }, []);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    async function loadArticlePrices() {
+      const { data, error } = await supabase.from("article_prices").select("*");
+
+      if (error) {
+        setDatabaseError("Lecture des prix Supabase impossible. Prix locaux conserves.");
+        return;
+      }
+
+      const nextPrices = data.reduce(
+        (prices, row) => ({
+          ...prices,
+          [row.article_id]: row.price
+        }),
+        {}
+      );
+
+      setArticlePrices(nextPrices);
+    }
+
+    loadArticlePrices();
+  }, []);
+
   function resetArticleModal() {
     setSelectedReserves([]);
     setIsDetailsStep(false);
@@ -311,6 +360,54 @@ function App() {
   function openArticle(article) {
     setSelectedArticle(article);
     resetArticleModal();
+  }
+
+  async function saveArticlePrice(articleId, price) {
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    const article = MOCK_ARTICLES.find((item) => item.id === articleId);
+    const { error } = await supabase.from("article_prices").upsert({
+      article_id: articleId,
+      article_name: article?.name || articleId,
+      price,
+      updated_at: new Date().toISOString()
+    });
+
+    if (error) {
+      setDatabaseError("Sauvegarde du prix echouee dans Supabase.");
+      return;
+    }
+
+    setDatabaseError("");
+  }
+
+  function updateArticlePrice(articleId, value) {
+    const nextPrice = Number(value.replace(/\D/g, ""));
+    const safePrice = Number.isNaN(nextPrice) ? 0 : nextPrice;
+    setArticlePrices((current) => ({
+      ...current,
+      [articleId]: safePrice
+    }));
+    saveArticlePrice(articleId, safePrice);
+  }
+
+  async function resetArticlePrices() {
+    setArticlePrices({});
+
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    const { error } = await supabase.from("article_prices").delete().neq("article_id", "");
+
+    if (error) {
+      setDatabaseError("Reinitialisation des prix Supabase echouee.");
+      return;
+    }
+
+    setDatabaseError("");
   }
 
   function updateQuantity(nextQuantity) {
@@ -506,13 +603,45 @@ function App() {
               <h2>Articles</h2>
               <p>Selection tactile rapide, details au clic.</p>
             </div>
-            <span>{MOCK_ARTICLES.length} articles</span>
+            <button
+              className="price-editor-toggle"
+              type="button"
+              onClick={() => setIsPriceEditorOpen((current) => !current)}
+            >
+              Modifier les prix
+            </button>
           </div>
+
+          {isPriceEditorOpen && (
+            <div className="price-editor">
+              <div className="price-editor-header">
+                <strong>Prix de lavage</strong>
+                <button type="button" onClick={resetArticlePrices}>
+                  Prix par defaut
+                </button>
+              </div>
+              <div className="price-editor-grid">
+                {pricedArticles.map((article) => (
+                  <label className="price-field" key={article.id}>
+                    <span>
+                      <strong>{article.name}</strong>
+                      <small>{article.icon}</small>
+                    </span>
+                    <input
+                      inputMode="numeric"
+                      value={article.price}
+                      onChange={(event) => updateArticlePrice(article.id, event.target.value)}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="article-scroll" aria-label="Liste des articles disponibles">
           <div className="article-grid">
-            {MOCK_ARTICLES.map((article) => (
+            {pricedArticles.map((article) => (
               <button
                 className="article-button"
                 key={article.id}
