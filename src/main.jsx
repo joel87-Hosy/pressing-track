@@ -241,6 +241,8 @@ function App() {
   const [orderHistory, setOrderHistory] = useState(getStoredHistory);
   const [historyLoading, setHistoryLoading] = useState(isSupabaseConfigured);
   const [databaseError, setDatabaseError] = useState("");
+  const [pickupQuery, setPickupQuery] = useState("");
+  const [selectedPickupOrder, setSelectedPickupOrder] = useState(null);
 
   const total = useMemo(
     () => ticketItems.reduce((sum, item) => sum + item.price, 0),
@@ -252,6 +254,19 @@ function App() {
     const nowKey = getPeriodKey(new Date(), historyPeriod);
     return orderHistory.filter((order) => getPeriodKey(order.createdAt, historyPeriod) === nowKey);
   }, [historyPeriod, orderHistory]);
+  const pickupMatches = useMemo(() => {
+    const normalizedQuery = pickupQuery.trim().replace(/^#/, "").toUpperCase();
+
+    if (normalizedQuery.length < 2) {
+      return [];
+    }
+
+    return orderHistory
+      .filter((order) =>
+        order.ticketNumber.replace(/^#/, "").toUpperCase().includes(normalizedQuery)
+      )
+      .slice(0, 8);
+  }, [pickupQuery, orderHistory]);
 
   useEffect(() => {
     localStorage.setItem("pressingtrack-ticket-history", JSON.stringify(orderHistory));
@@ -467,6 +482,13 @@ function App() {
     }
   }
 
+  async function validatePickup(orderId) {
+    await markTicketPickedUp(orderId);
+    setSelectedPickupOrder((current) =>
+      current && current.id === orderId ? { ...current, status: "PICKED_UP" } : current
+    );
+  }
+
   return (
     <main className="pos-shell">
       <section className="selection-panel" aria-label="Selection des articles">
@@ -617,6 +639,49 @@ function App() {
             </a>
           </div>
         )}
+
+        <section className="pickup-panel" aria-label="Verification retrait client">
+          <div>
+            <p className="eyebrow">Retrait client</p>
+            <h2>Verifier un ticket</h2>
+          </div>
+
+          <label className="pickup-label" htmlFor="pickup-ticket">
+            Numero du ticket
+          </label>
+          <input
+            id="pickup-ticket"
+            className="pickup-input"
+            value={pickupQuery}
+            onChange={(event) => setPickupQuery(event.target.value)}
+            placeholder="Ex: A-104"
+          />
+
+          <div className="pickup-results">
+            {pickupQuery.trim().length < 2 ? (
+              <div className="empty-history">Saisissez au moins 2 caracteres du ticket.</div>
+            ) : pickupMatches.length === 0 ? (
+              <div className="empty-history">Aucun ticket trouve.</div>
+            ) : (
+              pickupMatches.map((order) => (
+                <button
+                  className="pickup-result"
+                  key={order.id}
+                  type="button"
+                  onClick={() => setSelectedPickupOrder(order)}
+                >
+                  <span>
+                    <strong>{order.ticketNumber}</strong>
+                    <small>{formatDateTime(order.createdAt)}</small>
+                  </span>
+                  <span className={`status-badge status-${order.status.toLowerCase()}`}>
+                    {getStatusLabel(order.status)}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
 
         <section className="history-panel" aria-label="Tickets stockes">
           <div className="history-header">
@@ -829,6 +894,79 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {selectedPickupOrder && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="pickup-modal">
+            <div className="modal-title-row">
+              <div>
+                <p className="eyebrow">Verification retrait</p>
+                <h2>{selectedPickupOrder.ticketNumber}</h2>
+              </div>
+              <button type="button" onClick={() => setSelectedPickupOrder(null)}>
+                Fermer
+              </button>
+            </div>
+
+            <div className="pickup-summary">
+              <div>
+                <span>Statut</span>
+                <strong>{getStatusLabel(selectedPickupOrder.status)}</strong>
+              </div>
+              <div>
+                <span>Telephone</span>
+                <strong>{selectedPickupOrder.clientPhone}</strong>
+              </div>
+              <div>
+                <span>Depot</span>
+                <strong>{formatDateTime(selectedPickupOrder.createdAt)}</strong>
+              </div>
+              <div>
+                <span>Total</span>
+                <strong>{formatMoney(selectedPickupOrder.total)}</strong>
+              </div>
+            </div>
+
+            <div className="pickup-detail-list">
+              {selectedPickupOrder.items.map((item, index) => (
+                <article className="pickup-detail-item" key={item.lineId || index}>
+                  <div>
+                    <span className="mini-icon" aria-hidden="true">
+                      {item.icon}
+                    </span>
+                    <strong>
+                      {item.copyTotal > 1
+                        ? `${item.name} ${item.copyNumber}/${item.copyTotal}`
+                        : item.name}
+                    </strong>
+                  </div>
+                  <p>{item.reserve}</p>
+                  <small>
+                    {item.details.color} - {item.details.fabric} - {item.details.pattern} -{" "}
+                    {item.details.design}
+                    {item.details.brand !== "Non precise" ? ` - ${item.details.brand}` : ""}
+                  </small>
+                  {item.details.note && <small>{item.details.note}</small>}
+                </article>
+              ))}
+            </div>
+
+            <div className="modal-actions">
+              <button className="back-button" type="button" onClick={() => setSelectedPickupOrder(null)}>
+                Annuler
+              </button>
+              <button
+                className="add-button"
+                type="button"
+                disabled={selectedPickupOrder.status === "PICKED_UP"}
+                onClick={() => validatePickup(selectedPickupOrder.id)}
+              >
+                Valider le retrait
+              </button>
+            </div>
           </div>
         </div>
       )}
