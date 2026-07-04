@@ -52,6 +52,11 @@ const HISTORY_PERIODS = [
   { id: "month", label: "Mois" }
 ];
 
+const STATUS_LABELS = {
+  IN_PROCESSING: "En traitement",
+  PICKED_UP: "Retire"
+};
+
 function formatMoney(amount) {
   return new Intl.NumberFormat("fr-FR").format(amount) + " FCFA";
 }
@@ -165,6 +170,10 @@ function buildWhatsAppMessage({ ticketNumber, readyDate, total, items }) {
     "",
     "Merci pour votre confiance."
   ].join("\n");
+}
+
+function getStatusLabel(status) {
+  return STATUS_LABELS[status] || status;
 }
 
 function toDatabaseTicket(order) {
@@ -431,6 +440,33 @@ function App() {
     setDatabaseError("");
   }
 
+  async function markTicketPickedUp(orderId) {
+    setDatabaseError("");
+    setOrderHistory((current) =>
+      current.map((order) =>
+        order.id === orderId ? { ...order, status: "PICKED_UP" } : order
+      )
+    );
+
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("tickets")
+      .update({ status: "PICKED_UP" })
+      .eq("id", orderId);
+
+    if (error) {
+      setDatabaseError("Mise a jour du statut echouee dans Supabase.");
+      setOrderHistory((current) =>
+        current.map((order) =>
+          order.id === orderId ? { ...order, status: "IN_PROCESSING" } : order
+        )
+      );
+    }
+  }
+
   return (
     <main className="pos-shell">
       <section className="selection-panel" aria-label="Selection des articles">
@@ -573,7 +609,7 @@ function App() {
           <div className="confirmation">
             <div>
               <strong>{validatedOrder.ticketNumber}</strong>
-              <span>STATUS = '{validatedOrder.status}'</span>
+              <span>{getStatusLabel(validatedOrder.status)}</span>
             </div>
             <p>{validatedOrder.message}</p>
             <a href={validatedOrder.whatsappUrl} target="_blank" rel="noreferrer">
@@ -626,9 +662,20 @@ function App() {
                     {order.itemCount} article{order.itemCount > 1 ? "s" : ""} - {order.clientPhone}
                   </p>
                   <footer>
-                    <span>{order.status}</span>
+                    <span className={`status-badge status-${order.status.toLowerCase()}`}>
+                      {getStatusLabel(order.status)}
+                    </span>
                     <strong>{formatMoney(order.total)}</strong>
                   </footer>
+                  {order.status === "IN_PROCESSING" && (
+                    <button
+                      className="picked-up-button"
+                      type="button"
+                      onClick={() => markTicketPickedUp(order.id)}
+                    >
+                      Marquer comme retire
+                    </button>
+                  )}
                 </article>
               ))
             )}

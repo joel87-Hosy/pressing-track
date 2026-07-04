@@ -29,6 +29,7 @@ alter table tickets enable row level security;
 
 drop policy if exists "MVP public ticket read" on tickets;
 drop policy if exists "MVP public ticket insert" on tickets;
+drop policy if exists "MVP public ticket update" on tickets;
 
 create policy "MVP public ticket read"
 on tickets for select
@@ -38,4 +39,10 @@ using (true);
 create policy "MVP public ticket insert"
 on tickets for insert
 to anon
+with check (true);
+
+create policy "MVP public ticket update"
+on tickets for update
+to anon
+using (true)
 with check (true);
