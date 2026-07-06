@@ -38,6 +38,7 @@ alter table article_prices enable row level security;
 drop policy if exists "MVP public ticket read" on tickets;
 drop policy if exists "MVP public ticket insert" on tickets;
 drop policy if exists "MVP public ticket update" on tickets;
+drop policy if exists "MVP public ticket delete" on tickets;
 drop policy if exists "MVP public article price read" on article_prices;
 drop policy if exists "MVP public article price upsert" on article_prices;
 
@@ -56,6 +57,11 @@ on tickets for update
 to anon
 using (true)
 with check (true);
+
+create policy "MVP public ticket delete"
+on tickets for delete
+to anon
+using (true);
 
 create policy "MVP public article price read"
 on article_prices for select

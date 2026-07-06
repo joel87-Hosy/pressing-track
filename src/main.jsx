@@ -579,6 +579,42 @@ function App() {
     }
   }
 
+  async function deleteTicket(orderId) {
+    const orderToDelete = orderHistory.find((order) => order.id === orderId);
+
+    if (!orderToDelete) {
+      return;
+    }
+
+    const canDelete = window.confirm(
+      `Supprimer le ticket ${orderToDelete.ticketNumber} de l'historique ?`
+    );
+
+    if (!canDelete) {
+      return;
+    }
+
+    setDatabaseError("");
+    setOrderHistory((current) => current.filter((order) => order.id !== orderId));
+    setSelectedPickupOrder((current) => (current && current.id === orderId ? null : current));
+    setValidatedOrder((current) => (current && current.id === orderId ? null : current));
+
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    const { error } = await supabase.from("tickets").delete().eq("id", orderId);
+
+    if (error) {
+      setDatabaseError("Suppression Supabase echouee. Ticket restaure en local.");
+      setOrderHistory((current) =>
+        [orderToDelete, ...current].sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )
+      );
+    }
+  }
+
   async function validatePickup(orderId) {
     await markTicketPickedUp(orderId);
     setSelectedPickupOrder((current) =>
@@ -861,15 +897,30 @@ function App() {
                     </span>
                     <strong>{formatMoney(order.total)}</strong>
                   </footer>
-                  {order.status === "IN_PROCESSING" && (
+                  <div
+                    className={
+                      order.status === "IN_PROCESSING"
+                        ? "history-actions"
+                        : "history-actions single"
+                    }
+                  >
+                    {order.status === "IN_PROCESSING" && (
+                      <button
+                        className="picked-up-button"
+                        type="button"
+                        onClick={() => markTicketPickedUp(order.id)}
+                      >
+                        Marquer comme retire
+                      </button>
+                    )}
                     <button
-                      className="picked-up-button"
+                      className="delete-ticket-button"
                       type="button"
-                      onClick={() => markTicketPickedUp(order.id)}
+                      onClick={() => deleteTicket(order.id)}
                     >
-                      Marquer comme retire
+                      Supprimer
                     </button>
-                  )}
+                  </div>
                 </article>
               ))
             )}
