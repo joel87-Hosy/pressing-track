@@ -1,11 +1,26 @@
 create sequence if not exists ticket_number_seq start 104;
 
+create or replace function is_admin()
+returns boolean
+language sql
+stable
+as $$
+  select coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'admin';
+$$;
+
 create or replace function next_ticket_number()
 returns text
-language sql
+language plpgsql
 security definer
+set search_path = public
 as $$
-  select '#A-' || nextval('ticket_number_seq')::text;
+begin
+  if not public.is_admin() then
+    raise exception 'admin role required' using errcode = '42501';
+  end if;
+
+  return '#A-' || nextval('ticket_number_seq')::text;
+end;
 $$;
 
 create table if not exists tickets (
@@ -41,35 +56,54 @@ drop policy if exists "MVP public ticket update" on tickets;
 drop policy if exists "MVP public ticket delete" on tickets;
 drop policy if exists "MVP public article price read" on article_prices;
 drop policy if exists "MVP public article price upsert" on article_prices;
+drop policy if exists "Admin ticket read" on tickets;
+drop policy if exists "Admin ticket insert" on tickets;
+drop policy if exists "Admin ticket update" on tickets;
+drop policy if exists "Admin ticket delete" on tickets;
+drop policy if exists "Admin article price read" on article_prices;
+drop policy if exists "Admin article price write" on article_prices;
 
-create policy "MVP public ticket read"
+revoke all on function next_ticket_number() from public;
+revoke all on function next_ticket_number() from anon;
+revoke all on function next_ticket_number() from authenticated;
+grant execute on function next_ticket_number() to authenticated;
+
+create policy "Admin ticket read"
 on tickets for select
-to anon
-using (true);
+to authenticated
+using (public.is_admin());
 
-create policy "MVP public ticket insert"
+create policy "Admin ticket insert"
 on tickets for insert
-to anon
-with check (true);
+to authenticated
+with check (public.is_admin());
 
-create policy "MVP public ticket update"
+create policy "Admin ticket update"
 on tickets for update
-to anon
-using (true)
-with check (true);
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
 
-create policy "MVP public ticket delete"
+create policy "Admin ticket delete"
 on tickets for delete
-to anon
-using (true);
+to authenticated
+using (public.is_admin());
 
-create policy "MVP public article price read"
+create policy "Admin article price read"
 on article_prices for select
-to anon
-using (true);
+to authenticated
+using (public.is_admin());
 
-create policy "MVP public article price upsert"
+create policy "Admin article price write"
 on article_prices for all
-to anon
-using (true)
-with check (true);
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+-- Creation du compte admin:
+-- 1. Dans Supabase Dashboard > Authentication > Users, creez l'utilisateur admin avec son email et son mot de passe.
+-- 2. Remplacez l'email ci-dessous, puis executez la requete pour donner le role admin au compte.
+--
+-- update auth.users
+-- set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"admin"}'::jsonb
+-- where email = 'admin@pressingtrack.com';

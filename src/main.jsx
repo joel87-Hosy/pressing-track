@@ -80,6 +80,10 @@ function createDetailsList(quantity) {
 }
 
 function getStoredHistory() {
+  if (isSupabaseConfigured) {
+    return [];
+  }
+
   try {
     return JSON.parse(localStorage.getItem("pressingtrack-ticket-history")) || [];
   } catch {
@@ -88,6 +92,10 @@ function getStoredHistory() {
 }
 
 function getStoredArticlePrices() {
+  if (isSupabaseConfigured) {
+    return {};
+  }
+
   try {
     return JSON.parse(localStorage.getItem("pressingtrack-article-prices")) || {};
   } catch {
@@ -236,7 +244,97 @@ function DetailPills({ label, value, options, onChange }) {
   );
 }
 
+function LoginPage({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function submitLogin(event) {
+    event.preventDefault();
+    setError("");
+
+    if (!isSupabaseConfigured) {
+      setError("Supabase doit etre configure pour activer la connexion securisee.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password
+    });
+    setIsSubmitting(false);
+
+    if (authError || !data.session) {
+      setError("Email ou mot de passe incorrect.");
+      return;
+    }
+
+    const role = data.session.user.app_metadata?.role;
+    if (role !== "admin") {
+      await supabase.auth.signOut();
+      setError("Ce compte n'a pas le role admin.");
+      return;
+    }
+
+    onLogin(data.session);
+  }
+
+  return (
+    <main className="login-shell">
+      <section className="login-panel" aria-label="Connexion administrateur">
+        <div>
+          <p className="eyebrow">PressingTrack</p>
+          <h1>Connexion admin</h1>
+          <p className="login-copy">Acces reserve au comptoir et a l'historique.</p>
+        </div>
+
+        <form className="login-form" onSubmit={submitLogin}>
+          <label htmlFor="admin-email">
+            Email admin
+            <input
+              id="admin-email"
+              autoComplete="username"
+              type="email"
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setError("");
+              }}
+              placeholder="admin@pressingtrack.com"
+            />
+          </label>
+
+          <label htmlFor="admin-password">
+            Mot de passe
+            <input
+              id="admin-password"
+              autoComplete="current-password"
+              type="password"
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setError("");
+              }}
+              placeholder="Mot de passe"
+            />
+          </label>
+
+          {error && <div className="login-error">{error}</div>}
+
+          <button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Connexion..." : "Se connecter"}
+          </button>
+        </form>
+      </section>
+    </main>
+  );
+}
+
 function App() {
+  const [adminSession, setAdminSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const [articlePrices, setArticlePrices] = useState(getStoredArticlePrices);
   const [isPriceEditorOpen, setIsPriceEditorOpen] = useState(false);
   const [ticketItems, setTicketItems] = useState([]);
@@ -287,15 +385,60 @@ function App() {
   }, [pickupQuery, orderHistory]);
 
   useEffect(() => {
+    if (isSupabaseConfigured) {
+      localStorage.removeItem("pressingtrack-ticket-history");
+      return;
+    }
+
     localStorage.setItem("pressingtrack-ticket-history", JSON.stringify(orderHistory));
   }, [orderHistory]);
 
   useEffect(() => {
+    if (isSupabaseConfigured) {
+      localStorage.removeItem("pressingtrack-article-prices");
+      return;
+    }
+
     localStorage.setItem("pressingtrack-article-prices", JSON.stringify(articlePrices));
   }, [articlePrices]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
+      setAuthLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadSession() {
+      const { data } = await supabase.auth.getSession();
+      const session = data.session;
+
+      if (!isMounted) {
+        return;
+      }
+
+      setAdminSession(session?.user.app_metadata?.role === "admin" ? session : null);
+      setAuthLoading(false);
+    }
+
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAdminSession(session?.user.app_metadata?.role === "admin" ? session : null);
+      setAuthLoading(false);
+    });
+
+    loadSession();
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !adminSession) {
       setHistoryLoading(false);
       return;
     }
@@ -321,10 +464,10 @@ function App() {
     }
 
     loadTickets();
-  }, []);
+  }, [adminSession]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || !adminSession) {
       return;
     }
 
@@ -348,7 +491,7 @@ function App() {
     }
 
     loadArticlePrices();
-  }, []);
+  }, [adminSession]);
 
   function resetArticleModal() {
     setSelectedReserves([]);
@@ -622,6 +765,33 @@ function App() {
     );
   }
 
+  async function logoutAdmin() {
+    if (isSupabaseConfigured) {
+      await supabase.auth.signOut();
+    }
+
+    setAdminSession(null);
+    setOrderHistory([]);
+    setValidatedOrder(null);
+    setSelectedPickupOrder(null);
+  }
+
+  if (authLoading) {
+    return (
+      <main className="login-shell">
+        <section className="login-panel" aria-label="Verification de session">
+          <p className="eyebrow">PressingTrack</p>
+          <h1>Verification</h1>
+          <p className="login-copy">Controle de la session admin en cours.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!adminSession) {
+    return <LoginPage onLogin={setAdminSession} />;
+  }
+
   return (
     <main className="pos-shell">
       <section className="selection-panel" aria-label="Selection des articles">
@@ -631,7 +801,12 @@ function App() {
               <p className="eyebrow">PressingTrack</p>
               <h1>Depot client</h1>
             </div>
-            <div className="operator-badge">Comptoir</div>
+            <div className="operator-actions">
+              <div className="operator-badge">Admin</div>
+              <button className="logout-button" type="button" onClick={logoutAdmin}>
+                Deconnexion
+              </button>
+            </div>
           </div>
 
           <div className="section-heading">
