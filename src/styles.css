@@ -767,22 +767,11 @@ h2 {
   font-size: 1.35rem;
 }
 
-.database-badge,
 .database-error {
   border-radius: 8px;
   font-size: 1rem;
   font-weight: 1000;
   padding: 10px 12px;
-}
-
-.database-badge {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.database-badge.online {
-  background: #dcfce7;
-  color: #14532d;
 }
 
 .database-error {

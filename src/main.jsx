@@ -1032,10 +1032,6 @@ function App() {
             <strong>{visibleHistory.length}</strong>
           </div>
 
-          <div className={isSupabaseConfigured ? "database-badge online" : "database-badge"}>
-            {isSupabaseConfigured ? "Supabase connecte" : "Mode local: configurez Supabase"}
-          </div>
-
           {databaseError && <div className="database-error">{databaseError}</div>}
 
           <div className="period-tabs" role="tablist" aria-label="Periode historique">
