@@ -8,6 +8,14 @@ as $$
   select coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'admin';
 $$;
 
+create or replace function can_read_reports()
+returns boolean
+language sql
+stable
+as $$
+  select coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') in ('admin', 'supervisor');
+$$;
+
 create or replace function next_ticket_number()
 returns text
 language plpgsql
@@ -31,11 +39,14 @@ create table if not exists tickets (
   total integer not null default 0,
   item_count integer not null default 0,
   ready_date text not null,
+  picked_up_at timestamptz,
   whatsapp_url text not null,
   message text not null,
   items jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
 );
+
+alter table tickets add column if not exists picked_up_at timestamptz;
 
 create table if not exists article_prices (
   article_id text primary key,
@@ -71,7 +82,7 @@ grant execute on function next_ticket_number() to authenticated;
 create policy "Admin ticket read"
 on tickets for select
 to authenticated
-using (public.is_admin());
+using (public.can_read_reports());
 
 create policy "Admin ticket insert"
 on tickets for insert
@@ -92,7 +103,7 @@ using (public.is_admin());
 create policy "Admin article price read"
 on article_prices for select
 to authenticated
-using (public.is_admin());
+using (public.can_read_reports());
 
 create policy "Admin article price write"
 on article_prices for all
@@ -107,3 +118,11 @@ with check (public.is_admin());
 -- update auth.users
 -- set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"admin"}'::jsonb
 -- where email = 'admin@pressingtrack.com';
+
+-- Creation du compte superviseur:
+-- 1. Dans Supabase Dashboard > Authentication > Users, creez l'utilisateur superviseur avec son email et son mot de passe.
+-- 2. Remplacez l'email ci-dessous, puis executez la requete pour donner le role superviseur au compte.
+--
+-- update auth.users
+-- set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"supervisor"}'::jsonb
+-- where email = 'superviseur@pressingtrack.com';

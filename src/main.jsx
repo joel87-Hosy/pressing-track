@@ -57,6 +57,19 @@ const STATUS_LABELS = {
   PICKED_UP: "Retire"
 };
 
+const ROLE_LABELS = {
+  admin: "Admin",
+  supervisor: "Superviseur"
+};
+
+function canAccessDashboard(role) {
+  return role === "admin" || role === "supervisor";
+}
+
+function isAdminRole(role) {
+  return role === "admin";
+}
+
 function formatMoney(amount) {
   return new Intl.NumberFormat("fr-FR").format(amount) + " FCFA";
 }
@@ -126,12 +139,28 @@ function getPeriodKey(dateValue, period) {
 }
 
 function formatDateTime(dateValue) {
+  if (!dateValue) {
+    return "-";
+  }
+
   return new Intl.DateTimeFormat("fr-FR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit"
+  }).format(new Date(dateValue));
+}
+
+function formatDateOnly(dateValue) {
+  if (!dateValue) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
   }).format(new Date(dateValue));
 }
 
@@ -203,6 +232,7 @@ function toDatabaseTicket(order) {
     item_count: order.itemCount,
     items: order.items,
     ready_date: order.readyDate,
+    picked_up_at: order.pickedUpAt,
     whatsapp_url: order.whatsappUrl,
     message: order.message
   };
@@ -219,6 +249,7 @@ function fromDatabaseTicket(row) {
     itemCount: row.item_count,
     items: row.items || [],
     readyDate: row.ready_date,
+    pickedUpAt: row.picked_up_at,
     whatsappUrl: row.whatsapp_url,
     message: row.message
   };
@@ -241,6 +272,247 @@ function DetailPills({ label, value, options, onChange }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function SupervisorDashboard({
+  databaseError,
+  historyLoading,
+  onLogout,
+  orderHistory,
+  role,
+  selectedOrder,
+  setSelectedOrder
+}) {
+  const reportStats = useMemo(() => {
+    const depositedTickets = orderHistory.length;
+    const pickedUpTickets = orderHistory.filter((order) => order.status === "PICKED_UP").length;
+    const processingTickets = orderHistory.filter((order) => order.status === "IN_PROCESSING").length;
+    const totalRevenue = orderHistory.reduce((sum, order) => sum + order.total, 0);
+    const uniqueClients = new Set(orderHistory.map((order) => order.clientPhone).filter(Boolean));
+
+    return {
+      depositedTickets,
+      pickedUpTickets,
+      processingTickets,
+      totalRevenue,
+      clientCount: uniqueClients.size
+    };
+  }, [orderHistory]);
+
+  const clientRows = useMemo(() => {
+    const clients = new Map();
+
+    orderHistory.forEach((order) => {
+      const phone = order.clientPhone || "Client sans telephone";
+      const current = clients.get(phone) || {
+        phone,
+        tickets: 0,
+        items: 0,
+        total: 0,
+        lastDeposit: null,
+        lastPickup: null
+      };
+
+      current.tickets += 1;
+      current.items += order.itemCount;
+      current.total += order.total;
+      current.lastDeposit =
+        !current.lastDeposit || new Date(order.createdAt) > new Date(current.lastDeposit)
+          ? order.createdAt
+          : current.lastDeposit;
+      current.lastPickup =
+        order.pickedUpAt &&
+        (!current.lastPickup || new Date(order.pickedUpAt) > new Date(current.lastPickup))
+          ? order.pickedUpAt
+          : current.lastPickup;
+
+      clients.set(phone, current);
+    });
+
+    return Array.from(clients.values()).sort(
+      (a, b) => new Date(b.lastDeposit).getTime() - new Date(a.lastDeposit).getTime()
+    );
+  }, [orderHistory]);
+
+  return (
+    <main className="supervisor-shell">
+      <section className="supervisor-header">
+        <div>
+          <p className="eyebrow">PressingTrack</p>
+          <h1>Rapports</h1>
+          <p>Depots, retraits, tickets et clients.</p>
+        </div>
+        <div className="operator-actions">
+          <div className="operator-badge">{ROLE_LABELS[role] || role}</div>
+          <button className="logout-button" type="button" onClick={onLogout}>
+            Deconnexion
+          </button>
+        </div>
+      </section>
+
+      {databaseError && <div className="database-error">{databaseError}</div>}
+
+      <section className="report-grid" aria-label="Indicateurs superviseur">
+        <article className="report-card">
+          <span>Tickets deposes</span>
+          <strong>{reportStats.depositedTickets}</strong>
+        </article>
+        <article className="report-card">
+          <span>Tickets retires</span>
+          <strong>{reportStats.pickedUpTickets}</strong>
+        </article>
+        <article className="report-card">
+          <span>En traitement</span>
+          <strong>{reportStats.processingTickets}</strong>
+        </article>
+        <article className="report-card">
+          <span>Clients</span>
+          <strong>{reportStats.clientCount}</strong>
+        </article>
+        <article className="report-card wide">
+          <span>Total depots</span>
+          <strong>{formatMoney(reportStats.totalRevenue)}</strong>
+        </article>
+      </section>
+
+      <section className="report-section" aria-label="Rapport des tickets">
+        <div className="section-heading">
+          <div>
+            <h2>Tickets</h2>
+            <p>Rapport des depots et dates de retrait.</p>
+          </div>
+          <strong>{orderHistory.length}</strong>
+        </div>
+
+        <div className="report-table">
+          <div className="report-row report-row-head">
+            <span>Ticket</span>
+            <span>Client</span>
+            <span>Depot</span>
+            <span>Retrait</span>
+            <span>Statut</span>
+            <span>Total</span>
+          </div>
+
+          {historyLoading ? (
+            <div className="empty-history">Chargement des rapports...</div>
+          ) : orderHistory.length === 0 ? (
+            <div className="empty-history">Aucun ticket a afficher.</div>
+          ) : (
+            orderHistory.map((order) => (
+              <button
+                className="report-row report-row-button"
+                key={order.id}
+                type="button"
+                onClick={() => setSelectedOrder(order)}
+              >
+                <strong>{order.ticketNumber}</strong>
+                <span>{order.clientPhone}</span>
+                <span>{formatDateTime(order.createdAt)}</span>
+                <span>{formatDateTime(order.pickedUpAt)}</span>
+                <span className={`status-badge status-${order.status.toLowerCase()}`}>
+                  {getStatusLabel(order.status)}
+                </span>
+                <strong>{formatMoney(order.total)}</strong>
+              </button>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="report-section" aria-label="Liste des clients">
+        <div className="section-heading">
+          <div>
+            <h2>Clients</h2>
+            <p>Liste des clients avec depots et retraits.</p>
+          </div>
+          <strong>{clientRows.length}</strong>
+        </div>
+
+        <div className="client-list">
+          {clientRows.length === 0 ? (
+            <div className="empty-history">Aucun client a afficher.</div>
+          ) : (
+            clientRows.map((client) => (
+              <article className="client-item" key={client.phone}>
+                <div>
+                  <strong>{client.phone}</strong>
+                  <span>
+                    {client.tickets} ticket{client.tickets > 1 ? "s" : ""} - {client.items} article
+                    {client.items > 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div>
+                  <span>Dernier depot: {formatDateOnly(client.lastDeposit)}</span>
+                  <span>Dernier retrait: {formatDateOnly(client.lastPickup)}</span>
+                </div>
+                <strong>{formatMoney(client.total)}</strong>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+
+      {selectedOrder && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="pickup-modal">
+            <div className="modal-title-row">
+              <div>
+                <p className="eyebrow">Detail ticket</p>
+                <h2>{selectedOrder.ticketNumber}</h2>
+              </div>
+              <button type="button" onClick={() => setSelectedOrder(null)}>
+                Fermer
+              </button>
+            </div>
+
+            <div className="pickup-summary">
+              <div>
+                <span>Client</span>
+                <strong>{selectedOrder.clientPhone}</strong>
+              </div>
+              <div>
+                <span>Depot</span>
+                <strong>{formatDateTime(selectedOrder.createdAt)}</strong>
+              </div>
+              <div>
+                <span>Retrait</span>
+                <strong>{formatDateTime(selectedOrder.pickedUpAt)}</strong>
+              </div>
+              <div>
+                <span>Total</span>
+                <strong>{formatMoney(selectedOrder.total)}</strong>
+              </div>
+            </div>
+
+            <div className="pickup-detail-list">
+              {selectedOrder.items.map((item, index) => (
+                <article className="pickup-detail-item" key={item.lineId || index}>
+                  <div>
+                    <span className="mini-icon" aria-hidden="true">
+                      {item.icon}
+                    </span>
+                    <strong>
+                      {item.copyTotal > 1
+                        ? `${item.name} ${item.copyNumber}/${item.copyTotal}`
+                        : item.name}
+                    </strong>
+                  </div>
+                  <p>{item.reserve}</p>
+                  <small>
+                    {item.details.color} - {item.details.fabric} - {item.details.pattern} -{" "}
+                    {item.details.design}
+                    {item.details.brand !== "Non precise" ? ` - ${item.details.brand}` : ""}
+                  </small>
+                  {item.details.note && <small>{item.details.note}</small>}
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
   );
 }
 
@@ -272,9 +544,9 @@ function LoginPage({ onLogin }) {
     }
 
     const role = data.session.user.app_metadata?.role;
-    if (role !== "admin") {
+    if (!canAccessDashboard(role)) {
       await supabase.auth.signOut();
-      setError("Ce compte n'a pas le role admin.");
+      setError("Ce compte n'a pas le role admin ou superviseur.");
       return;
     }
 
@@ -283,16 +555,16 @@ function LoginPage({ onLogin }) {
 
   return (
     <main className="login-shell">
-      <section className="login-panel" aria-label="Connexion administrateur">
+      <section className="login-panel" aria-label="Connexion administrateur ou superviseur">
         <div>
           <p className="eyebrow">PressingTrack</p>
-          <h1>Connexion admin</h1>
-          <p className="login-copy">Acces reserve au comptoir et a l'historique.</p>
+          <h1>Connexion</h1>
+          <p className="login-copy">Acces reserve au comptoir, aux rapports et a l'historique.</p>
         </div>
 
         <form className="login-form" onSubmit={submitLogin}>
           <label htmlFor="admin-email">
-            Email admin
+            Email
             <input
               id="admin-email"
               autoComplete="username"
@@ -351,6 +623,9 @@ function App() {
   const [databaseError, setDatabaseError] = useState("");
   const [pickupQuery, setPickupQuery] = useState("");
   const [selectedPickupOrder, setSelectedPickupOrder] = useState(null);
+  const [selectedReportOrder, setSelectedReportOrder] = useState(null);
+  const currentRole = adminSession?.user.app_metadata?.role;
+  const isAdmin = isAdminRole(currentRole);
 
   const total = useMemo(
     () => ticketItems.reduce((sum, item) => sum + item.price, 0),
@@ -418,14 +693,14 @@ function App() {
         return;
       }
 
-      setAdminSession(session?.user.app_metadata?.role === "admin" ? session : null);
+      setAdminSession(canAccessDashboard(session?.user.app_metadata?.role) ? session : null);
       setAuthLoading(false);
     }
 
     const {
       data: { subscription }
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAdminSession(session?.user.app_metadata?.role === "admin" ? session : null);
+      setAdminSession(canAccessDashboard(session?.user.app_metadata?.role) ? session : null);
       setAuthLoading(false);
     });
 
@@ -451,7 +726,7 @@ function App() {
         .from("tickets")
         .select("*")
         .order("created_at", { ascending: false })
-        .limit(100);
+        .limit(1000);
 
       if (error) {
         setDatabaseError("Lecture Supabase impossible. Mode local conserve.");
@@ -467,7 +742,7 @@ function App() {
   }, [adminSession]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !adminSession) {
+    if (!isSupabaseConfigured || !adminSession || !isAdmin) {
       return;
     }
 
@@ -491,7 +766,7 @@ function App() {
     }
 
     loadArticlePrices();
-  }, [adminSession]);
+  }, [adminSession, isAdmin]);
 
   function resetArticleModal() {
     setSelectedReserves([]);
@@ -696,10 +971,12 @@ function App() {
   }
 
   async function markTicketPickedUp(orderId) {
+    const pickedUpAt = new Date().toISOString();
+
     setDatabaseError("");
     setOrderHistory((current) =>
       current.map((order) =>
-        order.id === orderId ? { ...order, status: "PICKED_UP" } : order
+        order.id === orderId ? { ...order, status: "PICKED_UP", pickedUpAt } : order
       )
     );
 
@@ -709,14 +986,14 @@ function App() {
 
     const { error } = await supabase
       .from("tickets")
-      .update({ status: "PICKED_UP" })
+      .update({ status: "PICKED_UP", picked_up_at: pickedUpAt })
       .eq("id", orderId);
 
     if (error) {
       setDatabaseError("Mise a jour du statut echouee dans Supabase.");
       setOrderHistory((current) =>
         current.map((order) =>
-          order.id === orderId ? { ...order, status: "IN_PROCESSING" } : order
+          order.id === orderId ? { ...order, status: "IN_PROCESSING", pickedUpAt: null } : order
         )
       );
     }
@@ -761,7 +1038,13 @@ function App() {
   async function validatePickup(orderId) {
     await markTicketPickedUp(orderId);
     setSelectedPickupOrder((current) =>
-      current && current.id === orderId ? { ...current, status: "PICKED_UP" } : current
+      current && current.id === orderId
+        ? {
+            ...current,
+            status: "PICKED_UP",
+            pickedUpAt: current.pickedUpAt || new Date().toISOString()
+          }
+        : current
     );
   }
 
@@ -774,6 +1057,7 @@ function App() {
     setOrderHistory([]);
     setValidatedOrder(null);
     setSelectedPickupOrder(null);
+    setSelectedReportOrder(null);
   }
 
   if (authLoading) {
@@ -782,7 +1066,7 @@ function App() {
         <section className="login-panel" aria-label="Verification de session">
           <p className="eyebrow">PressingTrack</p>
           <h1>Verification</h1>
-          <p className="login-copy">Controle de la session admin en cours.</p>
+          <p className="login-copy">Controle de la session en cours.</p>
         </section>
       </main>
     );
@@ -790,6 +1074,20 @@ function App() {
 
   if (!adminSession) {
     return <LoginPage onLogin={setAdminSession} />;
+  }
+
+  if (!isAdmin) {
+    return (
+      <SupervisorDashboard
+        databaseError={databaseError}
+        historyLoading={historyLoading}
+        onLogout={logoutAdmin}
+        orderHistory={orderHistory}
+        role={currentRole}
+        selectedOrder={selectedReportOrder}
+        setSelectedOrder={setSelectedReportOrder}
+      />
+    );
   }
 
   return (
@@ -802,7 +1100,7 @@ function App() {
               <h1>Depot client</h1>
             </div>
             <div className="operator-actions">
-              <div className="operator-badge">Admin</div>
+              <div className="operator-badge">{ROLE_LABELS[currentRole] || "Admin"}</div>
               <button className="logout-button" type="button" onClick={logoutAdmin}>
                 Deconnexion
               </button>
