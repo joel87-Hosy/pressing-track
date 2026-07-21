@@ -290,6 +290,316 @@ function DetailPills({ label, value, options, onChange }) {
   );
 }
 
+const ADMIN_MENU = [
+  { id: "dashboard", label: "Tableau" },
+  { id: "deposit", label: "Depot" },
+  { id: "pickups", label: "Retraits" },
+  { id: "tickets", label: "Tickets" },
+  { id: "clients", label: "Clients" },
+  { id: "prices", label: "Prix" },
+  { id: "settings", label: "Parametres" }
+];
+
+const SUPERVISOR_MENU = [
+  { id: "dashboard", label: "Tableau" },
+  { id: "reports", label: "Rapports" },
+  { id: "tickets", label: "Tickets" },
+  { id: "clients", label: "Clients" },
+  { id: "settings", label: "Parametres" }
+];
+
+function getReportStats(orderHistory) {
+  const depositedTickets = orderHistory.length;
+  const pickedUpTickets = orderHistory.filter((order) => order.status === "PICKED_UP").length;
+  const processingTickets = orderHistory.filter((order) => order.status === "IN_PROCESSING").length;
+  const totalRevenue = orderHistory.reduce((sum, order) => sum + order.total, 0);
+  const uniqueClients = new Set(orderHistory.map((order) => order.clientPhone).filter(Boolean));
+
+  return {
+    depositedTickets,
+    pickedUpTickets,
+    processingTickets,
+    totalRevenue,
+    clientCount: uniqueClients.size
+  };
+}
+
+function getClientRows(orderHistory) {
+  const clients = new Map();
+
+  orderHistory.forEach((order) => {
+    const phone = order.clientPhone || "Client sans telephone";
+    const current = clients.get(phone) || {
+      phone,
+      tickets: 0,
+      items: 0,
+      total: 0,
+      lastDeposit: null,
+      lastPickup: null
+    };
+
+    current.tickets += 1;
+    current.items += order.itemCount;
+    current.total += order.total;
+    current.lastDeposit =
+      !current.lastDeposit || new Date(order.createdAt) > new Date(current.lastDeposit)
+        ? order.createdAt
+        : current.lastDeposit;
+    current.lastPickup =
+      order.pickedUpAt &&
+      (!current.lastPickup || new Date(order.pickedUpAt) > new Date(current.lastPickup))
+        ? order.pickedUpAt
+        : current.lastPickup;
+
+    clients.set(phone, current);
+  });
+
+  return Array.from(clients.values()).sort(
+    (a, b) => new Date(b.lastDeposit).getTime() - new Date(a.lastDeposit).getTime()
+  );
+}
+
+function AppShell({ activeView, children, menuItems, onLogout, onSelectView, pressingName, role }) {
+  return (
+    <div className="workspace-shell">
+      <aside className="workspace-sidebar" aria-label="Menu principal">
+        <div>
+          <p className="eyebrow">{pressingName}</p>
+          <h1>PressingTrack</h1>
+        </div>
+
+        <nav className="workspace-nav">
+          {menuItems.map((item) => (
+            <button
+              className={activeView === item.id ? "workspace-nav-item active" : "workspace-nav-item"}
+              key={item.id}
+              type="button"
+              onClick={() => onSelectView(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="workspace-account">
+          <div className="operator-badge">{ROLE_LABELS[role] || role}</div>
+          <button className="logout-button" type="button" onClick={onLogout}>
+            Deconnexion
+          </button>
+        </div>
+      </aside>
+
+      <main className="workspace-main">{children}</main>
+    </div>
+  );
+}
+
+function ReportStatsGrid({ orderHistory }) {
+  const reportStats = useMemo(() => getReportStats(orderHistory), [orderHistory]);
+
+  return (
+    <section className="report-grid" aria-label="Indicateurs">
+      <article className="report-card">
+        <span>Tickets deposes</span>
+        <strong>{reportStats.depositedTickets}</strong>
+      </article>
+      <article className="report-card">
+        <span>Tickets retires</span>
+        <strong>{reportStats.pickedUpTickets}</strong>
+      </article>
+      <article className="report-card">
+        <span>En traitement</span>
+        <strong>{reportStats.processingTickets}</strong>
+      </article>
+      <article className="report-card">
+        <span>Clients</span>
+        <strong>{reportStats.clientCount}</strong>
+      </article>
+      <article className="report-card wide">
+        <span>Total depots</span>
+        <strong>{formatMoney(reportStats.totalRevenue)}</strong>
+      </article>
+    </section>
+  );
+}
+
+function TicketsReport({ historyLoading, onSelectOrder, orderHistory, title = "Tickets" }) {
+  return (
+    <section className="report-section" aria-label={title}>
+      <div className="section-heading">
+        <div>
+          <h2>{title}</h2>
+          <p>Rapport des depots et dates de retrait.</p>
+        </div>
+        <strong>{orderHistory.length}</strong>
+      </div>
+
+      <div className="report-table">
+        <div className="report-row report-row-head">
+          <span>Ticket</span>
+          <span>Client</span>
+          <span>Depot</span>
+          <span>Retrait</span>
+          <span>Statut</span>
+          <span>Total</span>
+        </div>
+
+        {historyLoading ? (
+          <div className="empty-history">Chargement des tickets...</div>
+        ) : orderHistory.length === 0 ? (
+          <div className="empty-history">Aucun ticket a afficher.</div>
+        ) : (
+          orderHistory.map((order) => (
+            <button
+              className="report-row report-row-button"
+              key={order.id}
+              type="button"
+              onClick={() => onSelectOrder(order)}
+            >
+              <strong>{order.ticketNumber}</strong>
+              <span>{order.clientPhone}</span>
+              <span>{formatDateTime(order.createdAt)}</span>
+              <span>{formatDateTime(order.pickedUpAt)}</span>
+              <span className={`status-badge status-${order.status.toLowerCase()}`}>
+                {getStatusLabel(order.status)}
+              </span>
+              <strong>{formatMoney(order.total)}</strong>
+            </button>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ClientsReport({ orderHistory }) {
+  const clientRows = useMemo(() => getClientRows(orderHistory), [orderHistory]);
+
+  return (
+    <section className="report-section" aria-label="Liste des clients">
+      <div className="section-heading">
+        <div>
+          <h2>Clients</h2>
+          <p>Liste des clients avec depots et retraits.</p>
+        </div>
+        <strong>{clientRows.length}</strong>
+      </div>
+
+      <div className="client-list">
+        {clientRows.length === 0 ? (
+          <div className="empty-history">Aucun client a afficher.</div>
+        ) : (
+          clientRows.map((client) => (
+            <article className="client-item" key={client.phone}>
+              <div>
+                <strong>{client.phone}</strong>
+                <span>
+                  {client.tickets} ticket{client.tickets > 1 ? "s" : ""} - {client.items} article
+                  {client.items > 1 ? "s" : ""}
+                </span>
+              </div>
+              <div>
+                <span>Dernier depot: {formatDateOnly(client.lastDeposit)}</span>
+                <span>Dernier retrait: {formatDateOnly(client.lastPickup)}</span>
+              </div>
+              <strong>{formatMoney(client.total)}</strong>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SettingsView({ pressingName, role }) {
+  return (
+    <section className="report-section" aria-label="Parametres">
+      <div className="section-heading">
+        <div>
+          <h2>Parametres</h2>
+          <p>Informations du compte connecte.</p>
+        </div>
+      </div>
+
+      <div className="settings-grid">
+        <article className="report-card">
+          <span>Pressing</span>
+          <strong>{pressingName}</strong>
+        </article>
+        <article className="report-card">
+          <span>Role</span>
+          <strong>{ROLE_LABELS[role] || role}</strong>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function TicketReadModal({ order, onClose }) {
+  if (!order) {
+    return null;
+  }
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="pickup-modal">
+        <div className="modal-title-row">
+          <div>
+            <p className="eyebrow">Detail ticket</p>
+            <h2>{order.ticketNumber}</h2>
+          </div>
+          <button type="button" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+
+        <div className="pickup-summary">
+          <div>
+            <span>Client</span>
+            <strong>{order.clientPhone}</strong>
+          </div>
+          <div>
+            <span>Depot</span>
+            <strong>{formatDateTime(order.createdAt)}</strong>
+          </div>
+          <div>
+            <span>Retrait</span>
+            <strong>{formatDateTime(order.pickedUpAt)}</strong>
+          </div>
+          <div>
+            <span>Total</span>
+            <strong>{formatMoney(order.total)}</strong>
+          </div>
+        </div>
+
+        <div className="pickup-detail-list">
+          {order.items.map((item, index) => (
+            <article className="pickup-detail-item" key={item.lineId || index}>
+              <div>
+                <span className="mini-icon" aria-hidden="true">
+                  {item.icon}
+                </span>
+                <strong>
+                  {item.copyTotal > 1
+                    ? `${item.name} ${item.copyNumber}/${item.copyTotal}`
+                    : item.name}
+                </strong>
+              </div>
+              <p>{item.reserve}</p>
+              <small>
+                {item.details.color} - {item.details.fabric} - {item.details.pattern} -{" "}
+                {item.details.design}
+                {item.details.brand !== "Non precise" ? ` - ${item.details.brand}` : ""}
+              </small>
+              {item.details.note && <small>{item.details.note}</small>}
+            </article>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SupervisorDashboard({
   databaseError,
   historyLoading,
@@ -300,235 +610,46 @@ function SupervisorDashboard({
   selectedOrder,
   setSelectedOrder
 }) {
-  const reportStats = useMemo(() => {
-    const depositedTickets = orderHistory.length;
-    const pickedUpTickets = orderHistory.filter((order) => order.status === "PICKED_UP").length;
-    const processingTickets = orderHistory.filter((order) => order.status === "IN_PROCESSING").length;
-    const totalRevenue = orderHistory.reduce((sum, order) => sum + order.total, 0);
-    const uniqueClients = new Set(orderHistory.map((order) => order.clientPhone).filter(Boolean));
-
-    return {
-      depositedTickets,
-      pickedUpTickets,
-      processingTickets,
-      totalRevenue,
-      clientCount: uniqueClients.size
-    };
-  }, [orderHistory]);
-
-  const clientRows = useMemo(() => {
-    const clients = new Map();
-
-    orderHistory.forEach((order) => {
-      const phone = order.clientPhone || "Client sans telephone";
-      const current = clients.get(phone) || {
-        phone,
-        tickets: 0,
-        items: 0,
-        total: 0,
-        lastDeposit: null,
-        lastPickup: null
-      };
-
-      current.tickets += 1;
-      current.items += order.itemCount;
-      current.total += order.total;
-      current.lastDeposit =
-        !current.lastDeposit || new Date(order.createdAt) > new Date(current.lastDeposit)
-          ? order.createdAt
-          : current.lastDeposit;
-      current.lastPickup =
-        order.pickedUpAt &&
-        (!current.lastPickup || new Date(order.pickedUpAt) > new Date(current.lastPickup))
-          ? order.pickedUpAt
-          : current.lastPickup;
-
-      clients.set(phone, current);
-    });
-
-    return Array.from(clients.values()).sort(
-      (a, b) => new Date(b.lastDeposit).getTime() - new Date(a.lastDeposit).getTime()
-    );
-  }, [orderHistory]);
+  const [activeView, setActiveView] = useState("dashboard");
 
   return (
-    <main className="supervisor-shell">
-      <section className="supervisor-header">
-        <div>
-          <p className="eyebrow">{pressingName}</p>
-          <h1>Rapports</h1>
-          <p>Depots, retraits, tickets et clients.</p>
-        </div>
-        <div className="operator-actions">
-          <div className="operator-badge">{ROLE_LABELS[role] || role}</div>
-          <button className="logout-button" type="button" onClick={onLogout}>
-            Deconnexion
-          </button>
-        </div>
-      </section>
-
+    <AppShell
+      activeView={activeView}
+      menuItems={SUPERVISOR_MENU}
+      onLogout={onLogout}
+      onSelectView={setActiveView}
+      pressingName={pressingName}
+      role={role}
+    >
       {databaseError && <div className="database-error">{databaseError}</div>}
 
-      <section className="report-grid" aria-label="Indicateurs superviseur">
-        <article className="report-card">
-          <span>Tickets deposes</span>
-          <strong>{reportStats.depositedTickets}</strong>
-        </article>
-        <article className="report-card">
-          <span>Tickets retires</span>
-          <strong>{reportStats.pickedUpTickets}</strong>
-        </article>
-        <article className="report-card">
-          <span>En traitement</span>
-          <strong>{reportStats.processingTickets}</strong>
-        </article>
-        <article className="report-card">
-          <span>Clients</span>
-          <strong>{reportStats.clientCount}</strong>
-        </article>
-        <article className="report-card wide">
-          <span>Total depots</span>
-          <strong>{formatMoney(reportStats.totalRevenue)}</strong>
-        </article>
-      </section>
-
-      <section className="report-section" aria-label="Rapport des tickets">
-        <div className="section-heading">
-          <div>
-            <h2>Tickets</h2>
-            <p>Rapport des depots et dates de retrait.</p>
-          </div>
-          <strong>{orderHistory.length}</strong>
-        </div>
-
-        <div className="report-table">
-          <div className="report-row report-row-head">
-            <span>Ticket</span>
-            <span>Client</span>
-            <span>Depot</span>
-            <span>Retrait</span>
-            <span>Statut</span>
-            <span>Total</span>
-          </div>
-
-          {historyLoading ? (
-            <div className="empty-history">Chargement des rapports...</div>
-          ) : orderHistory.length === 0 ? (
-            <div className="empty-history">Aucun ticket a afficher.</div>
-          ) : (
-            orderHistory.map((order) => (
-              <button
-                className="report-row report-row-button"
-                key={order.id}
-                type="button"
-                onClick={() => setSelectedOrder(order)}
-              >
-                <strong>{order.ticketNumber}</strong>
-                <span>{order.clientPhone}</span>
-                <span>{formatDateTime(order.createdAt)}</span>
-                <span>{formatDateTime(order.pickedUpAt)}</span>
-                <span className={`status-badge status-${order.status.toLowerCase()}`}>
-                  {getStatusLabel(order.status)}
-                </span>
-                <strong>{formatMoney(order.total)}</strong>
-              </button>
-            ))
-          )}
-        </div>
-      </section>
-
-      <section className="report-section" aria-label="Liste des clients">
-        <div className="section-heading">
-          <div>
-            <h2>Clients</h2>
-            <p>Liste des clients avec depots et retraits.</p>
-          </div>
-          <strong>{clientRows.length}</strong>
-        </div>
-
-        <div className="client-list">
-          {clientRows.length === 0 ? (
-            <div className="empty-history">Aucun client a afficher.</div>
-          ) : (
-            clientRows.map((client) => (
-              <article className="client-item" key={client.phone}>
-                <div>
-                  <strong>{client.phone}</strong>
-                  <span>
-                    {client.tickets} ticket{client.tickets > 1 ? "s" : ""} - {client.items} article
-                    {client.items > 1 ? "s" : ""}
-                  </span>
-                </div>
-                <div>
-                  <span>Dernier depot: {formatDateOnly(client.lastDeposit)}</span>
-                  <span>Dernier retrait: {formatDateOnly(client.lastPickup)}</span>
-                </div>
-                <strong>{formatMoney(client.total)}</strong>
-              </article>
-            ))
-          )}
-        </div>
-      </section>
-
-      {selectedOrder && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <div className="pickup-modal">
-            <div className="modal-title-row">
-              <div>
-                <p className="eyebrow">Detail ticket</p>
-                <h2>{selectedOrder.ticketNumber}</h2>
-              </div>
-              <button type="button" onClick={() => setSelectedOrder(null)}>
-                Fermer
-              </button>
-            </div>
-
-            <div className="pickup-summary">
-              <div>
-                <span>Client</span>
-                <strong>{selectedOrder.clientPhone}</strong>
-              </div>
-              <div>
-                <span>Depot</span>
-                <strong>{formatDateTime(selectedOrder.createdAt)}</strong>
-              </div>
-              <div>
-                <span>Retrait</span>
-                <strong>{formatDateTime(selectedOrder.pickedUpAt)}</strong>
-              </div>
-              <div>
-                <span>Total</span>
-                <strong>{formatMoney(selectedOrder.total)}</strong>
-              </div>
-            </div>
-
-            <div className="pickup-detail-list">
-              {selectedOrder.items.map((item, index) => (
-                <article className="pickup-detail-item" key={item.lineId || index}>
-                  <div>
-                    <span className="mini-icon" aria-hidden="true">
-                      {item.icon}
-                    </span>
-                    <strong>
-                      {item.copyTotal > 1
-                        ? `${item.name} ${item.copyNumber}/${item.copyTotal}`
-                        : item.name}
-                    </strong>
-                  </div>
-                  <p>{item.reserve}</p>
-                  <small>
-                    {item.details.color} - {item.details.fabric} - {item.details.pattern} -{" "}
-                    {item.details.design}
-                    {item.details.brand !== "Non precise" ? ` - ${item.details.brand}` : ""}
-                  </small>
-                  {item.details.note && <small>{item.details.note}</small>}
-                </article>
-              ))}
-            </div>
-          </div>
+      {activeView === "dashboard" && (
+        <div className="workspace-stack">
+          <ReportStatsGrid orderHistory={orderHistory} />
+          <TicketsReport
+            historyLoading={historyLoading}
+            onSelectOrder={setSelectedOrder}
+            orderHistory={orderHistory.slice(0, 8)}
+            title="Derniers tickets"
+          />
         </div>
       )}
-    </main>
+
+      {(activeView === "reports" || activeView === "tickets") && (
+        <TicketsReport
+          historyLoading={historyLoading}
+          onSelectOrder={setSelectedOrder}
+          orderHistory={orderHistory}
+          title={activeView === "reports" ? "Rapports" : "Tickets"}
+        />
+      )}
+
+      {activeView === "clients" && <ClientsReport orderHistory={orderHistory} />}
+
+      {activeView === "settings" && <SettingsView pressingName={pressingName} role={role} />}
+
+      <TicketReadModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+    </AppShell>
   );
 }
 
@@ -642,6 +763,7 @@ function App() {
   const [pickupQuery, setPickupQuery] = useState("");
   const [selectedPickupOrder, setSelectedPickupOrder] = useState(null);
   const [selectedReportOrder, setSelectedReportOrder] = useState(null);
+  const [activeAdminView, setActiveAdminView] = useState("deposit");
   const currentRole = adminSession?.user.app_metadata?.role;
   const currentPressingId = getSessionPressingId(adminSession);
   const currentPressingName = getSessionPressingName(adminSession);
@@ -1147,8 +1269,154 @@ function App() {
     );
   }
 
+  if (activeAdminView !== "deposit") {
+    return (
+      <AppShell
+        activeView={activeAdminView}
+        menuItems={ADMIN_MENU}
+        onLogout={logoutAdmin}
+        onSelectView={setActiveAdminView}
+        pressingName={currentPressingName}
+        role={currentRole}
+      >
+        {databaseError && <div className="database-error">{databaseError}</div>}
+
+        {activeAdminView === "dashboard" && (
+          <div className="workspace-stack">
+            <ReportStatsGrid orderHistory={orderHistory} />
+            <TicketsReport
+              historyLoading={historyLoading}
+              onSelectOrder={setSelectedReportOrder}
+              orderHistory={orderHistory.slice(0, 8)}
+              title="Derniers tickets"
+            />
+          </div>
+        )}
+
+        {activeAdminView === "pickups" && (
+          <section className="report-section" aria-label="Retraits">
+            <div className="section-heading">
+              <div>
+                <h2>Retraits</h2>
+                <p>Recherche et validation des tickets a retirer.</p>
+              </div>
+            </div>
+
+            <label className="pickup-label" htmlFor="workspace-pickup-ticket">
+              Numero du ticket
+            </label>
+            <input
+              id="workspace-pickup-ticket"
+              className="pickup-input"
+              value={pickupQuery}
+              onChange={(event) => setPickupQuery(event.target.value)}
+              placeholder="Ex: A-104"
+            />
+
+            <div className="pickup-results">
+              {pickupQuery.trim().length < 2 ? (
+                <div className="empty-history">Saisissez au moins 2 caracteres du ticket.</div>
+              ) : pickupMatches.length === 0 ? (
+                <div className="empty-history">Aucun ticket trouve.</div>
+              ) : (
+                pickupMatches.map((order) => (
+                  <article className="history-item" key={order.id}>
+                    <div>
+                      <strong>{order.ticketNumber}</strong>
+                      <span>{formatDateTime(order.createdAt)}</span>
+                    </div>
+                    <p>
+                      {order.itemCount} article{order.itemCount > 1 ? "s" : ""} - {order.clientPhone}
+                    </p>
+                    <footer>
+                      <span className={`status-badge status-${order.status.toLowerCase()}`}>
+                        {getStatusLabel(order.status)}
+                      </span>
+                      <strong>{formatMoney(order.total)}</strong>
+                    </footer>
+                    <div className="history-actions">
+                      <button
+                        className="picked-up-button"
+                        type="button"
+                        disabled={order.status === "PICKED_UP"}
+                        onClick={() => validatePickup(order.id)}
+                      >
+                        Valider le retrait
+                      </button>
+                      <button
+                        className="back-button compact-button"
+                        type="button"
+                        onClick={() => setSelectedReportOrder(order)}
+                      >
+                        Voir detail
+                      </button>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+        )}
+
+        {activeAdminView === "tickets" && (
+          <TicketsReport
+            historyLoading={historyLoading}
+            onSelectOrder={setSelectedReportOrder}
+            orderHistory={orderHistory}
+            title="Tickets"
+          />
+        )}
+
+        {activeAdminView === "clients" && <ClientsReport orderHistory={orderHistory} />}
+
+        {activeAdminView === "prices" && (
+          <section className="report-section" aria-label="Prix">
+            <div className="section-heading">
+              <div>
+                <h2>Prix</h2>
+                <p>Prix personnalises pour ce pressing.</p>
+              </div>
+              <button className="price-editor-toggle" type="button" onClick={resetArticlePrices}>
+                Prix par defaut
+              </button>
+            </div>
+            <div className="price-editor-grid">
+              {pricedArticles.map((article) => (
+                <label className="price-field" key={article.id}>
+                  <span>
+                    <strong>{article.name}</strong>
+                    <small>{article.icon}</small>
+                  </span>
+                  <input
+                    inputMode="numeric"
+                    value={article.price}
+                    onChange={(event) => updateArticlePrice(article.id, event.target.value)}
+                  />
+                </label>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {activeAdminView === "settings" && (
+          <SettingsView pressingName={currentPressingName} role={currentRole} />
+        )}
+
+        <TicketReadModal order={selectedReportOrder} onClose={() => setSelectedReportOrder(null)} />
+      </AppShell>
+    );
+  }
+
   return (
-    <main className="pos-shell">
+    <AppShell
+      activeView={activeAdminView}
+      menuItems={ADMIN_MENU}
+      onLogout={logoutAdmin}
+      onSelectView={setActiveAdminView}
+      pressingName={currentPressingName}
+      role={currentRole}
+    >
+    <div className="pos-shell">
       <section className="selection-panel" aria-label="Selection des articles">
         <div className="selection-header">
           <div className="brand-row">
@@ -1676,7 +1944,8 @@ function App() {
           </div>
         </div>
       )}
-    </main>
+    </div>
+    </AppShell>
   );
 }
 
