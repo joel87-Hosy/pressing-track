@@ -254,3 +254,28 @@ with check (public.can_write_pressing(pressing_id));
 -- update auth.users
 -- set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"platform_admin"}'::jsonb
 -- where email = 'votre-email@domaine.com';
+
+-- Recuperer les anciennes donnees apres migration multi-pressing:
+-- Si les tickets/prix existaient avant l'ajout de pressing_id, ils ont ete rattaches au pressing legacy
+-- 00000000-0000-0000-0000-000000000001. Remplacez PRESSING_ID_ACTIF par l'id du vrai pressing.
+--
+-- update tickets
+-- set pressing_id = 'PRESSING_ID_ACTIF'
+-- where pressing_id = '00000000-0000-0000-0000-000000000001';
+--
+-- Si le vrai pressing n'a pas encore de prix personnalises:
+--
+-- update article_prices
+-- set pressing_id = 'PRESSING_ID_ACTIF'
+-- where pressing_id = '00000000-0000-0000-0000-000000000001';
+--
+-- Si le vrai pressing a deja des prix et que l'update ci-dessus signale un conflit, utilisez plutot:
+--
+-- insert into article_prices (pressing_id, article_id, article_name, price, updated_at)
+-- select 'PRESSING_ID_ACTIF', article_id, article_name, price, updated_at
+-- from article_prices
+-- where pressing_id = '00000000-0000-0000-0000-000000000001'
+-- on conflict (pressing_id, article_id) do update
+-- set article_name = excluded.article_name,
+--     price = excluded.price,
+--     updated_at = excluded.updated_at;
