@@ -294,6 +294,7 @@ const ADMIN_MENU = [
   { id: "dashboard", label: "Tableau" },
   { id: "deposit", label: "Depot" },
   { id: "pickups", label: "Retraits" },
+  { id: "stock", label: "Stock" },
   { id: "tickets", label: "Tickets" },
   { id: "clients", label: "Clients" },
   { id: "prices", label: "Prix" },
@@ -303,9 +304,16 @@ const ADMIN_MENU = [
 const SUPERVISOR_MENU = [
   { id: "dashboard", label: "Tableau" },
   { id: "reports", label: "Rapports" },
+  { id: "stock", label: "Stock" },
   { id: "tickets", label: "Tickets" },
   { id: "clients", label: "Clients" },
   { id: "settings", label: "Parametres" }
+];
+
+const STOCK_TABS = [
+  { id: "dirty", label: "Attente lavage" },
+  { id: "ready", label: "Pret retrait" },
+  { id: "overdue", label: "Depasse" }
 ];
 
 function getReportStats(orderHistory) {
@@ -357,6 +365,39 @@ function getClientRows(orderHistory) {
   return Array.from(clients.values()).sort(
     (a, b) => new Date(b.lastDeposit).getTime() - new Date(a.lastDeposit).getTime()
   );
+}
+
+function getExpectedPickupDate(order) {
+  const date = new Date(order.createdAt);
+  date.setDate(date.getDate() + 2);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function getStockRows(orderHistory) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return orderHistory
+    .filter((order) => order.status !== "PICKED_UP")
+    .flatMap((order) => {
+      const expectedPickupDate = getExpectedPickupDate(order);
+      const stockStatus =
+        expectedPickupDate < today ? "overdue" : expectedPickupDate.getTime() === today.getTime() ? "ready" : "dirty";
+
+      return order.items.map((item, index) => ({
+        id: `${order.id}-${item.lineId || index}`,
+        ticketNumber: order.ticketNumber,
+        clientPhone: order.clientPhone,
+        createdAt: order.createdAt,
+        expectedPickupDate,
+        stockStatus,
+        name: item.copyTotal > 1 ? `${item.name} ${item.copyNumber}/${item.copyTotal}` : item.name,
+        reserve: item.reserve,
+        details: item.details,
+        icon: item.icon
+      }));
+    });
 }
 
 function AppShell({ activeView, children, menuItems, onLogout, onSelectView, pressingName, role }) {
@@ -511,6 +552,76 @@ function ClientsReport({ orderHistory }) {
   );
 }
 
+function StockView({ orderHistory }) {
+  const [activeStockTab, setActiveStockTab] = useState("dirty");
+  const stockRows = useMemo(() => getStockRows(orderHistory), [orderHistory]);
+  const visibleStockRows = stockRows.filter((row) => row.stockStatus === activeStockTab);
+  const stockCounts = STOCK_TABS.reduce(
+    (counts, tab) => ({
+      ...counts,
+      [tab.id]: stockRows.filter((row) => row.stockStatus === tab.id).length
+    }),
+    {}
+  );
+
+  return (
+    <section className="report-section" aria-label="Stock pressing">
+      <div className="section-heading">
+        <div>
+          <h2>Stock</h2>
+          <p>Articles presents au pressing avant retrait client.</p>
+        </div>
+        <strong>{stockRows.length}</strong>
+      </div>
+
+      <div className="stock-tabs" role="tablist" aria-label="Etat du stock">
+        {STOCK_TABS.map((tab) => (
+          <button
+            className={activeStockTab === tab.id ? "stock-tab active" : "stock-tab"}
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveStockTab(tab.id)}
+          >
+            <span>{tab.label}</span>
+            <strong>{stockCounts[tab.id] || 0}</strong>
+          </button>
+        ))}
+      </div>
+
+      <div className="stock-list">
+        {visibleStockRows.length === 0 ? (
+          <div className="empty-history">Aucun article dans cette categorie.</div>
+        ) : (
+          visibleStockRows.map((row) => (
+            <article className="stock-item" key={row.id}>
+              <div className="stock-item-main">
+                <span className="mini-icon" aria-hidden="true">
+                  {row.icon}
+                </span>
+                <div>
+                  <strong>{row.name}</strong>
+                  <p>{row.reserve}</p>
+                  <small>
+                    {row.details.color} - {row.details.fabric} - {row.details.pattern} -{" "}
+                    {row.details.design}
+                    {row.details.brand !== "Non precise" ? ` - ${row.details.brand}` : ""}
+                  </small>
+                </div>
+              </div>
+              <div className="stock-meta">
+                <strong>{row.ticketNumber}</strong>
+                <span>{row.clientPhone}</span>
+                <span>Depot: {formatDateOnly(row.createdAt)}</span>
+                <span>Retrait prevu: {formatDateOnly(row.expectedPickupDate)}</span>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
 function SettingsView({ pressingName, role }) {
   return (
     <section className="report-section" aria-label="Parametres">
@@ -643,6 +754,8 @@ function SupervisorDashboard({
           title={activeView === "reports" ? "Rapports" : "Tickets"}
         />
       )}
+
+      {activeView === "stock" && <StockView orderHistory={orderHistory} />}
 
       {activeView === "clients" && <ClientsReport orderHistory={orderHistory} />}
 
@@ -1366,6 +1479,8 @@ function App() {
             title="Tickets"
           />
         )}
+
+        {activeAdminView === "stock" && <StockView orderHistory={orderHistory} />}
 
         {activeAdminView === "clients" && <ClientsReport orderHistory={orderHistory} />}
 
