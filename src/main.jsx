@@ -400,6 +400,29 @@ function getStockRows(orderHistory) {
     });
 }
 
+function getLastSevenDayRows(orderHistory) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (6 - index));
+    const key = date.toISOString().slice(0, 10);
+    const tickets = orderHistory.filter((order) => order.createdAt.slice(0, 10) === key);
+
+    return {
+      key,
+      label: new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(date),
+      tickets: tickets.length,
+      total: tickets.reduce((sum, order) => sum + order.total, 0)
+    };
+  });
+}
+
+function getTopClientRows(orderHistory) {
+  return getClientRows(orderHistory).slice(0, 5);
+}
+
 function AppShell({ activeView, children, menuItems, onLogout, onSelectView, pressingName, role }) {
   return (
     <div className="workspace-shell">
@@ -459,6 +482,121 @@ function ReportStatsGrid({ orderHistory }) {
       <article className="report-card wide">
         <span>Total depots</span>
         <strong>{formatMoney(reportStats.totalRevenue)}</strong>
+      </article>
+    </section>
+  );
+}
+
+function DashboardCharts({ orderHistory }) {
+  const reportStats = useMemo(() => getReportStats(orderHistory), [orderHistory]);
+  const dayRows = useMemo(() => getLastSevenDayRows(orderHistory), [orderHistory]);
+  const topClients = useMemo(() => getTopClientRows(orderHistory), [orderHistory]);
+  const stockRows = useMemo(() => getStockRows(orderHistory), [orderHistory]);
+  const maxDayTickets = Math.max(1, ...dayRows.map((row) => row.tickets));
+  const maxClientTotal = Math.max(1, ...topClients.map((client) => client.total));
+  const totalTickets = Math.max(1, reportStats.depositedTickets);
+  const pickedUpPercent = Math.round((reportStats.pickedUpTickets / totalTickets) * 100);
+  const processingPercent = Math.round((reportStats.processingTickets / totalTickets) * 100);
+  const readyStock = stockRows.filter((row) => row.stockStatus === "ready").length;
+  const overdueStock = stockRows.filter((row) => row.stockStatus === "overdue").length;
+
+  return (
+    <section className="dashboard-charts" aria-label="Graphiques du tableau de bord">
+      <article className="chart-panel">
+        <div className="chart-heading">
+          <div>
+            <h2>Statuts tickets</h2>
+            <p>Part des tickets retires et en traitement.</p>
+          </div>
+        </div>
+        <div className="status-chart">
+          <div
+            className="donut-chart"
+            style={{
+              background: `conic-gradient(var(--green) 0 ${pickedUpPercent}%, var(--blue) ${pickedUpPercent}% 100%)`
+            }}
+            aria-label={`${pickedUpPercent}% retires, ${processingPercent}% en traitement`}
+          >
+            <span>{pickedUpPercent}%</span>
+          </div>
+          <div className="chart-legend">
+            <div>
+              <span className="legend-dot green-dot" />
+              <strong>{reportStats.pickedUpTickets}</strong>
+              <small>Tickets retires</small>
+            </div>
+            <div>
+              <span className="legend-dot blue-dot" />
+              <strong>{reportStats.processingTickets}</strong>
+              <small>En traitement</small>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article className="chart-panel wide-chart">
+        <div className="chart-heading">
+          <div>
+            <h2>Depots sur 7 jours</h2>
+            <p>Volume quotidien des tickets enregistres.</p>
+          </div>
+        </div>
+        <div className="bar-chart">
+          {dayRows.map((row) => (
+            <div className="bar-column" key={row.key}>
+              <div className="bar-track">
+                <span style={{ height: `${Math.max(8, (row.tickets / maxDayTickets) * 100)}%` }} />
+              </div>
+              <strong>{row.tickets}</strong>
+              <small>{row.label}</small>
+            </div>
+          ))}
+        </div>
+      </article>
+
+      <article className="chart-panel">
+        <div className="chart-heading">
+          <div>
+            <h2>Alertes stock</h2>
+            <p>Articles prets ou depasses avant retrait.</p>
+          </div>
+        </div>
+        <div className="stock-alert-grid">
+          <div>
+            <span>Pret retrait</span>
+            <strong>{readyStock}</strong>
+          </div>
+          <div className="alert-overdue">
+            <span>Depasse</span>
+            <strong>{overdueStock}</strong>
+          </div>
+        </div>
+      </article>
+
+      <article className="chart-panel wide-chart">
+        <div className="chart-heading">
+          <div>
+            <h2>Top clients</h2>
+            <p>Clients classes par montant total depose.</p>
+          </div>
+        </div>
+        <div className="client-chart">
+          {topClients.length === 0 ? (
+            <div className="empty-history">Aucune activite client a afficher.</div>
+          ) : (
+            topClients.map((client) => (
+              <div className="client-bar-row" key={client.phone}>
+                <div>
+                  <strong>{client.phone}</strong>
+                  <small>{formatMoney(client.total)}</small>
+                </div>
+                <span>
+                  <i style={{ width: `${Math.max(8, (client.total / maxClientTotal) * 100)}%` }} />
+                </span>
+              </div>
+            ))
+          )}
+        </div>
       </article>
     </section>
   );
@@ -737,6 +875,7 @@ function SupervisorDashboard({
       {activeView === "dashboard" && (
         <div className="workspace-stack">
           <ReportStatsGrid orderHistory={orderHistory} />
+          <DashboardCharts orderHistory={orderHistory} />
           <TicketsReport
             historyLoading={historyLoading}
             onSelectOrder={setSelectedOrder}
@@ -1397,6 +1536,7 @@ function App() {
         {activeAdminView === "dashboard" && (
           <div className="workspace-stack">
             <ReportStatsGrid orderHistory={orderHistory} />
+            <DashboardCharts orderHistory={orderHistory} />
             <TicketsReport
               historyLoading={historyLoading}
               onSelectOrder={setSelectedReportOrder}
