@@ -1,0 +1,68 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Length 2704 >>
+stream
+BT /F1 18 Tf 48 790 Td (Reglage Supabase pour creer un nouveau pressing) Tj ET
+BT /F1 13 Tf 48 768 Td (Objectif) Tj ET
+BT /F1 11 Tf 48 752 Td (Chaque pressing doit avoir son propre pressing_id. Le compte admin et le) Tj ET
+BT /F1 11 Tf 48 734 Td (compte superviseur du meme pressing doivent partager exactement ce meme) Tj ET
+BT /F1 11 Tf 48 716 Td (pressing_id.) Tj ET
+BT /F1 13 Tf 48 698 Td (1. Creer le pressing) Tj ET
+BT /F1 11 Tf 48 682 Td (Dans Supabase > SQL Editor, executer :) Tj ET
+BT /F1 10 Tf 48 670 Td (insert into pressings \(name, owner_email\)) Tj ET
+BT /F1 10 Tf 48 660 Td (values \('NOM_DU_PRESSING', 'admin@nouveaupressing.com'\)) Tj ET
+BT /F1 10 Tf 48 650 Td (returning id;) Tj ET
+BT /F1 11 Tf 48 634 Td (Copier l'id retourne par Supabase. Exemple :) Tj ET
+BT /F1 11 Tf 48 616 Td (8f3b2c10-4a9e-41e3-8f21-123456789abc) Tj ET
+BT /F1 13 Tf 48 598 Td (2. Creer les utilisateurs) Tj ET
+BT /F1 11 Tf 48 582 Td (Aller dans Authentication > Users, puis creer deux utilisateurs :) Tj ET
+BT /F1 10 Tf 48 570 Td (admin@nouveaupressing.com) Tj ET
+BT /F1 10 Tf 48 560 Td (superviseur@nouveaupressing.com) Tj ET
+BT /F1 13 Tf 48 542 Td (3. Donner le role admin) Tj ET
+BT /F1 11 Tf 48 526 Td (Remplacer l'id, le nom et l'email, puis executer :) Tj ET
+BT /F1 10 Tf 48 514 Td (update auth.users) Tj ET
+BT /F1 10 Tf 48 504 Td (set raw_app_meta_data = coalesce\(raw_app_meta_data, '{}'::jsonb\)) Tj ET
+BT /F1 10 Tf 48 494 Td (||) Tj ET
+BT /F1 10 Tf 48 484 Td ('{"role":"admin","pressing_id":"8f3b2c10-4a9e-41e3-8f21-123456789abc","pressing_name":"NOM_DU_PRESSING"}'::jsonb) Tj ET
+BT /F1 10 Tf 48 474 Td (where email = 'admin@nouveaupressing.com';) Tj ET
+BT /F1 13 Tf 48 456 Td (4. Donner le role superviseur) Tj ET
+BT /F1 11 Tf 48 440 Td (Remplacer l'id, le nom et l'email, puis executer :) Tj ET
+BT /F1 10 Tf 48 428 Td (update auth.users) Tj ET
+BT /F1 10 Tf 48 418 Td (set raw_app_meta_data = coalesce\(raw_app_meta_data, '{}'::jsonb\)) Tj ET
+BT /F1 10 Tf 48 408 Td (||) Tj ET
+BT /F1 10 Tf 48 398 Td ('{"role":"supervisor","pressing_id":"8f3b2c10-4a9e-41e3-8f21-123456789abc","pressing_name":"NOM_DU_PRESSING"}'::jsonb) Tj ET
+BT /F1 10 Tf 48 388 Td (where email = 'superviseur@nouveaupressing.com';) Tj ET
+BT /F1 13 Tf 48 370 Td (5. Verifier) Tj ET
+BT /F1 11 Tf 48 354 Td (Executer :) Tj ET
+BT /F1 10 Tf 48 342 Td (select email, raw_app_meta_data) Tj ET
+BT /F1 10 Tf 48 332 Td (from auth.users) Tj ET
+BT /F1 10 Tf 48 322 Td (where email in \('admin@nouveaupressing.com', 'superviseur@nouveaupressing.com'\);) Tj ET
+BT /F1 11 Tf 48 306 Td (Les deux comptes doivent avoir le meme pressing_id. Si les pressing_id sont) Tj ET
+BT /F1 11 Tf 48 292 Td (differents, ils ne verront pas les memes tickets.) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 4 0 R >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000185 00000 n 
+0000002941 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+3067
+%%EOF
