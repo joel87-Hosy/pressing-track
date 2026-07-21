@@ -59,15 +59,28 @@ const STATUS_LABELS = {
 
 const ROLE_LABELS = {
   admin: "Admin",
-  supervisor: "Superviseur"
+  supervisor: "Superviseur",
+  platform_admin: "Plateforme"
 };
 
 function canAccessDashboard(role) {
-  return role === "admin" || role === "supervisor";
+  return role === "admin" || role === "supervisor" || role === "platform_admin";
 }
 
 function isAdminRole(role) {
   return role === "admin";
+}
+
+function isPlatformAdminRole(role) {
+  return role === "platform_admin";
+}
+
+function getSessionPressingId(session) {
+  return session?.user.app_metadata?.pressing_id || null;
+}
+
+function getSessionPressingName(session) {
+  return session?.user.app_metadata?.pressing_name || "PressingTrack";
 }
 
 function formatMoney(amount) {
@@ -224,6 +237,7 @@ function getStatusLabel(status) {
 function toDatabaseTicket(order) {
   return {
     id: order.id,
+    pressing_id: order.pressingId,
     ticket_number: order.ticketNumber,
     status: order.status,
     created_at: order.createdAt,
@@ -241,6 +255,7 @@ function toDatabaseTicket(order) {
 function fromDatabaseTicket(row) {
   return {
     id: row.id,
+    pressingId: row.pressing_id,
     ticketNumber: row.ticket_number,
     status: row.status,
     createdAt: row.created_at,
@@ -280,6 +295,7 @@ function SupervisorDashboard({
   historyLoading,
   onLogout,
   orderHistory,
+  pressingName,
   role,
   selectedOrder,
   setSelectedOrder
@@ -339,7 +355,7 @@ function SupervisorDashboard({
     <main className="supervisor-shell">
       <section className="supervisor-header">
         <div>
-          <p className="eyebrow">PressingTrack</p>
+          <p className="eyebrow">{pressingName}</p>
           <h1>Rapports</h1>
           <p>Depots, retraits, tickets et clients.</p>
         </div>
@@ -544,9 +560,11 @@ function LoginPage({ onLogin }) {
     }
 
     const role = data.session.user.app_metadata?.role;
-    if (!canAccessDashboard(role)) {
+    const hasScope = Boolean(getSessionPressingId(data.session)) || isPlatformAdminRole(role);
+
+    if (!canAccessDashboard(role) || !hasScope) {
       await supabase.auth.signOut();
-      setError("Ce compte n'a pas le role admin ou superviseur.");
+      setError("Ce compte n'a pas le role admin/superviseur ou aucun pressing associe.");
       return;
     }
 
@@ -625,7 +643,11 @@ function App() {
   const [selectedPickupOrder, setSelectedPickupOrder] = useState(null);
   const [selectedReportOrder, setSelectedReportOrder] = useState(null);
   const currentRole = adminSession?.user.app_metadata?.role;
+  const currentPressingId = getSessionPressingId(adminSession);
+  const currentPressingName = getSessionPressingName(adminSession);
   const isAdmin = isAdminRole(currentRole);
+  const isPlatformAdmin = isPlatformAdminRole(currentRole);
+  const hasPressingScope = Boolean(currentPressingId) || isPlatformAdmin;
 
   const total = useMemo(
     () => ticketItems.reduce((sum, item) => sum + item.price, 0),
@@ -688,19 +710,23 @@ function App() {
     async function loadSession() {
       const { data } = await supabase.auth.getSession();
       const session = data.session;
+      const role = session?.user.app_metadata?.role;
+      const hasScope = Boolean(getSessionPressingId(session)) || isPlatformAdminRole(role);
 
       if (!isMounted) {
         return;
       }
 
-      setAdminSession(canAccessDashboard(session?.user.app_metadata?.role) ? session : null);
+      setAdminSession(canAccessDashboard(role) && hasScope ? session : null);
       setAuthLoading(false);
     }
 
     const {
       data: { subscription }
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAdminSession(canAccessDashboard(session?.user.app_metadata?.role) ? session : null);
+      const role = session?.user.app_metadata?.role;
+      const hasScope = Boolean(getSessionPressingId(session)) || isPlatformAdminRole(role);
+      setAdminSession(canAccessDashboard(role) && hasScope ? session : null);
       setAuthLoading(false);
     });
 
@@ -713,7 +739,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !adminSession) {
+    if (!isSupabaseConfigured || !adminSession || !hasPressingScope) {
       setHistoryLoading(false);
       return;
     }
@@ -722,11 +748,17 @@ function App() {
       setHistoryLoading(true);
       setDatabaseError("");
 
-      const { data, error } = await supabase
+      let query = supabase
         .from("tickets")
         .select("*")
         .order("created_at", { ascending: false })
         .limit(1000);
+
+      if (currentPressingId) {
+        query = query.eq("pressing_id", currentPressingId);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         setDatabaseError("Lecture Supabase impossible. Mode local conserve.");
@@ -739,15 +771,18 @@ function App() {
     }
 
     loadTickets();
-  }, [adminSession]);
+  }, [adminSession, currentPressingId, hasPressingScope]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !adminSession || !isAdmin) {
+    if (!isSupabaseConfigured || !adminSession || !isAdmin || !currentPressingId) {
       return;
     }
 
     async function loadArticlePrices() {
-      const { data, error } = await supabase.from("article_prices").select("*");
+      const { data, error } = await supabase
+        .from("article_prices")
+        .select("*")
+        .eq("pressing_id", currentPressingId);
 
       if (error) {
         setDatabaseError("Lecture des prix Supabase impossible. Prix locaux conserves.");
@@ -766,7 +801,7 @@ function App() {
     }
 
     loadArticlePrices();
-  }, [adminSession, isAdmin]);
+  }, [adminSession, currentPressingId, isAdmin]);
 
   function resetArticleModal() {
     setSelectedReserves([]);
@@ -781,17 +816,23 @@ function App() {
   }
 
   async function saveArticlePrice(articleId, price) {
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || !currentPressingId) {
       return;
     }
 
     const article = MOCK_ARTICLES.find((item) => item.id === articleId);
-    const { error } = await supabase.from("article_prices").upsert({
-      article_id: articleId,
-      article_name: article?.name || articleId,
-      price,
-      updated_at: new Date().toISOString()
-    });
+    const { error } = await supabase
+      .from("article_prices")
+      .upsert(
+        {
+          pressing_id: currentPressingId,
+          article_id: articleId,
+          article_name: article?.name || articleId,
+          price,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: "pressing_id,article_id" }
+      );
 
     if (error) {
       setDatabaseError("Sauvegarde du prix echouee dans Supabase.");
@@ -814,11 +855,15 @@ function App() {
   async function resetArticlePrices() {
     setArticlePrices({});
 
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || !currentPressingId) {
       return;
     }
 
-    const { error } = await supabase.from("article_prices").delete().neq("article_id", "");
+    const { error } = await supabase
+      .from("article_prices")
+      .delete()
+      .eq("pressing_id", currentPressingId)
+      .neq("article_id", "");
 
     if (error) {
       setDatabaseError("Reinitialisation des prix Supabase echouee.");
@@ -919,6 +964,11 @@ function App() {
   async function validateDeposit() {
     if (!canValidate) return;
 
+    if (isSupabaseConfigured && !currentPressingId) {
+      setDatabaseError("Aucun pressing n'est associe a ce compte.");
+      return;
+    }
+
     setDatabaseError("");
 
     let ticketNumber;
@@ -940,6 +990,7 @@ function App() {
     });
     const order = {
       id: crypto.randomUUID(),
+      pressingId: currentPressingId,
       ticketNumber,
       status: "IN_PROCESSING",
       createdAt,
@@ -987,6 +1038,7 @@ function App() {
     const { error } = await supabase
       .from("tickets")
       .update({ status: "PICKED_UP", picked_up_at: pickedUpAt })
+      .eq("pressing_id", currentPressingId)
       .eq("id", orderId);
 
     if (error) {
@@ -1023,7 +1075,11 @@ function App() {
       return;
     }
 
-    const { error } = await supabase.from("tickets").delete().eq("id", orderId);
+    const { error } = await supabase
+      .from("tickets")
+      .delete()
+      .eq("pressing_id", currentPressingId)
+      .eq("id", orderId);
 
     if (error) {
       setDatabaseError("Suppression Supabase echouee. Ticket restaure en local.");
@@ -1083,6 +1139,7 @@ function App() {
         historyLoading={historyLoading}
         onLogout={logoutAdmin}
         orderHistory={orderHistory}
+        pressingName={currentPressingName}
         role={currentRole}
         selectedOrder={selectedReportOrder}
         setSelectedOrder={setSelectedReportOrder}
@@ -1096,7 +1153,7 @@ function App() {
         <div className="selection-header">
           <div className="brand-row">
             <div>
-              <p className="eyebrow">PressingTrack</p>
+              <p className="eyebrow">{currentPressingName}</p>
               <h1>Depot client</h1>
             </div>
             <div className="operator-actions">
