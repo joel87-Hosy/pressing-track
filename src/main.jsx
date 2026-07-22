@@ -353,12 +353,14 @@ function getClientRows(orderHistory) {
       items: 0,
       total: 0,
       lastDeposit: null,
-      lastPickup: null
+      lastPickup: null,
+      orders: []
     };
 
     current.tickets += 1;
     current.items += order.itemCount;
     current.total += order.total;
+    current.orders.push(order);
     current.lastDeposit =
       !current.lastDeposit || new Date(order.createdAt) > new Date(current.lastDeposit)
         ? order.createdAt
@@ -372,9 +374,14 @@ function getClientRows(orderHistory) {
     clients.set(phone, current);
   });
 
-  return Array.from(clients.values()).sort(
-    (a, b) => new Date(b.lastDeposit).getTime() - new Date(a.lastDeposit).getTime()
-  );
+  return Array.from(clients.values())
+    .map((client) => ({
+      ...client,
+      orders: client.orders.sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      )
+    }))
+    .sort((a, b) => new Date(b.lastDeposit).getTime() - new Date(a.lastDeposit).getTime());
 }
 
 function getExpectedPickupDate(order) {
@@ -663,40 +670,122 @@ function TicketsReport({ historyLoading, onSelectOrder, orderHistory, title = "T
 
 function ClientsReport({ orderHistory }) {
   const clientRows = useMemo(() => getClientRows(orderHistory), [orderHistory]);
+  const [selectedClient, setSelectedClient] = useState(null);
 
   return (
-    <section className="report-section" aria-label="Liste des clients">
-      <div className="section-heading">
-        <div>
-          <h2>Clients</h2>
-          <p>Liste des clients avec depots et retraits.</p>
+    <>
+      <section className="report-section" aria-label="Liste des clients">
+        <div className="section-heading">
+          <div>
+            <h2>Clients</h2>
+            <p>Liste des clients avec depots et retraits.</p>
+          </div>
+          <strong>{clientRows.length}</strong>
         </div>
-        <strong>{clientRows.length}</strong>
-      </div>
 
-      <div className="client-list">
-        {clientRows.length === 0 ? (
-          <div className="empty-history">Aucun client a afficher.</div>
-        ) : (
-          clientRows.map((client) => (
-            <article className="client-item" key={client.phone}>
-              <div>
-                <strong>{client.phone}</strong>
-                <span>
-                  {client.tickets} ticket{client.tickets > 1 ? "s" : ""} - {client.items} article
-                  {client.items > 1 ? "s" : ""}
+        <div className="client-list">
+          {clientRows.length === 0 ? (
+            <div className="empty-history">Aucun client a afficher.</div>
+          ) : (
+            clientRows.map((client) => (
+              <button
+                aria-label={`Afficher les details du client ${client.phone}`}
+                className="client-item client-item-button"
+                key={client.phone}
+                type="button"
+                onClick={() => setSelectedClient(client)}
+              >
+                <div>
+                  <strong>{client.phone}</strong>
+                  <span>
+                    {client.tickets} ticket{client.tickets > 1 ? "s" : ""} - {client.items} article
+                    {client.items > 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div>
+                  <span>Dernier depot: {formatDateOnly(client.lastDeposit)}</span>
+                  <span>Dernier retrait: {formatDateOnly(client.lastPickup)}</span>
+                </div>
+                <strong>{formatMoney(client.total)}</strong>
+              </button>
+            ))
+          )}
+        </div>
+      </section>
+
+      <ClientDetailModal client={selectedClient} onClose={() => setSelectedClient(null)} />
+    </>
+  );
+}
+
+function ClientDetailModal({ client, onClose }) {
+  if (!client) {
+    return null;
+  }
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="pickup-modal">
+        <div className="modal-title-row">
+          <div>
+            <p className="eyebrow">Detail client</p>
+            <h2>{client.phone}</h2>
+          </div>
+          <button type="button" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+
+        <div className="pickup-summary">
+          <div>
+            <span>Tickets</span>
+            <strong>{client.tickets}</strong>
+          </div>
+          <div>
+            <span>Articles</span>
+            <strong>{client.items}</strong>
+          </div>
+          <div>
+            <span>Total</span>
+            <strong>{formatMoney(client.total)}</strong>
+          </div>
+          <div>
+            <span>Dernier retrait</span>
+            <strong>{formatDateOnly(client.lastPickup)}</strong>
+          </div>
+        </div>
+
+        <div className="client-detail-list">
+          {client.orders.map((order) => (
+            <article className="client-detail-ticket" key={order.id}>
+              <div className="client-detail-ticket-top">
+                <div>
+                  <strong>{order.ticketNumber}</strong>
+                  <span>{formatDateTime(order.createdAt)}</span>
+                </div>
+                <span className={`status-badge status-${order.status.toLowerCase()}`}>
+                  {getStatusLabel(order.status)}
                 </span>
               </div>
-              <div>
-                <span>Dernier depot: {formatDateOnly(client.lastDeposit)}</span>
-                <span>Dernier retrait: {formatDateOnly(client.lastPickup)}</span>
+              <div className="client-detail-ticket-meta">
+                <span>{order.itemCount} article{order.itemCount > 1 ? "s" : ""}</span>
+                <span>Retrait: {formatDateTime(order.pickedUpAt)}</span>
+                <strong>{formatMoney(order.total)}</strong>
               </div>
-              <strong>{formatMoney(client.total)}</strong>
+              <div className="client-detail-items">
+                {order.items.map((item) => (
+                  <span key={item.lineId}>
+                    {item.copyTotal > 1
+                      ? `${item.name} ${item.copyNumber}/${item.copyTotal}`
+                      : item.name}
+                  </span>
+                ))}
+              </div>
             </article>
-          ))
-        )}
+          ))}
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 

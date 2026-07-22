@@ -1771,6 +1771,25 @@ h2 {
   padding: 14px;
 }
 
+.client-item-button {
+  width: 100%;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.client-item-button:hover {
+  border-color: var(--blue);
+  background: #eff6ff;
+  box-shadow: 0 8px 18px rgba(21, 94, 239, 0.12);
+}
+
+.client-item-button:focus-visible {
+  outline: 3px solid rgba(21, 94, 239, 0.35);
+  outline-offset: 2px;
+}
+
 .client-item div {
   display: grid;
   gap: 5px;
@@ -1790,6 +1809,59 @@ h2 {
   color: var(--muted);
   font-size: 0.98rem;
   font-weight: 900;
+}
+
+.client-detail-list {
+  display: grid;
+  gap: 12px;
+}
+
+.client-detail-ticket {
+  display: grid;
+  gap: 12px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 14px;
+}
+
+.client-detail-ticket-top,
+.client-detail-ticket-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.client-detail-ticket-top div {
+  display: grid;
+  gap: 5px;
+}
+
+.client-detail-ticket strong {
+  color: var(--ink);
+}
+
+.client-detail-ticket span {
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.client-detail-ticket-meta strong {
+  color: var(--green-dark);
+}
+
+.client-detail-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.client-detail-items span {
+  border-radius: 8px;
+  background: #e0f2fe;
+  color: #075985;
+  padding: 6px 8px;
 }
 
 .stock-tabs {
@@ -2034,6 +2106,12 @@ h2 {
   .client-item {
     align-items: stretch;
     grid-template-columns: 1fr;
+  }
+
+  .client-detail-ticket-top,
+  .client-detail-ticket-meta {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .report-grid {
