@@ -97,8 +97,18 @@ function getReadyDate() {
   }).format(date);
 }
 
-function createTicketNumber() {
-  return "#A-" + Math.floor(104 + Math.random() * 80);
+function getTicketNumberValue(ticketNumber) {
+  const match = /^#A-(\d+)$/i.exec(ticketNumber || "");
+  return match ? Number(match[1]) : 0;
+}
+
+function createTicketNumber(existingOrders = []) {
+  const highestExistingNumber = existingOrders.reduce(
+    (highest, order) => Math.max(highest, getTicketNumberValue(order.ticketNumber)),
+    103
+  );
+
+  return "#A-" + (highestExistingNumber + 1);
 }
 
 function createDetailsList(quantity) {
@@ -1324,7 +1334,7 @@ function App() {
 
   async function getNextTicketNumber() {
     if (!isSupabaseConfigured) {
-      return createTicketNumber();
+      return createTicketNumber(orderHistory);
     }
 
     const { data, error } = await supabase.rpc("next_ticket_number");
@@ -1332,7 +1342,14 @@ function App() {
       throw error;
     }
 
-    return data;
+    const existingTicketNumbers = new Set(orderHistory.map((order) => order.ticketNumber));
+    let candidate = data;
+
+    while (existingTicketNumbers.has(candidate)) {
+      candidate = "#A-" + (getTicketNumberValue(candidate) + 1);
+    }
+
+    return candidate;
   }
 
   async function validateDeposit() {
@@ -1350,7 +1367,7 @@ function App() {
       ticketNumber = await getNextTicketNumber();
     } catch {
       setDatabaseError("Numero Supabase impossible. Ticket local genere.");
-      ticketNumber = createTicketNumber();
+      ticketNumber = createTicketNumber(orderHistory);
     }
 
     const readyDate = getReadyDate();

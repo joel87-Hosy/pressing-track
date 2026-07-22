@@ -92,7 +92,14 @@ begin
   end if;
 
   update public.pressings
-  set ticket_counter = ticket_counter + 1,
+  set ticket_counter = greatest(
+        ticket_counter + 1,
+        (
+          select coalesce(max((substring(ticket_number from '^#A-(\d+)$'))::integer), 103) + 1
+          from public.tickets
+          where pressing_id = tenant_id
+        )
+      ),
       updated_at = now()
   where id = tenant_id
     and subscription_status = 'active'
