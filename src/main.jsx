@@ -859,7 +859,57 @@ function StockView({ orderHistory }) {
   );
 }
 
-function SettingsView({ pressingName, role }) {
+function SettingsView({ pressingName, role, userEmail }) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordStatus, setPasswordStatus] = useState({ type: "", message: "" });
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  async function submitPasswordUpdate(event) {
+    event.preventDefault();
+    setPasswordStatus({ type: "", message: "" });
+
+    if (!isSupabaseConfigured) {
+      setPasswordStatus({
+        type: "error",
+        message: "Supabase doit etre configure pour modifier le mot de passe."
+      });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordStatus({
+        type: "error",
+        message: "Le nouveau mot de passe doit contenir au moins 6 caracteres."
+      });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordStatus({
+        type: "error",
+        message: "Les deux mots de passe ne correspondent pas."
+      });
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setIsUpdatingPassword(false);
+
+    if (error) {
+      setPasswordStatus({
+        type: "error",
+        message: "Modification impossible. Verifiez le mot de passe ou reconnectez-vous."
+      });
+      return;
+    }
+
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordStatus({ type: "success", message: "Mot de passe mis a jour." });
+  }
+
   return (
     <section className="report-section" aria-label="Parametres">
       <div className="section-heading">
@@ -879,6 +929,53 @@ function SettingsView({ pressingName, role }) {
           <strong>{ROLE_LABELS[role] || role}</strong>
         </article>
       </div>
+
+      <form className="password-settings" onSubmit={submitPasswordUpdate}>
+        <div>
+          <h3>Mot de passe</h3>
+          <p>{userEmail || "Compte connecte"}</p>
+        </div>
+
+        <div className="password-fields">
+          <label htmlFor="new-password">
+            Nouveau mot de passe
+            <input
+              id="new-password"
+              autoComplete="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(event) => {
+                setNewPassword(event.target.value);
+                setPasswordStatus({ type: "", message: "" });
+              }}
+              placeholder="Au moins 6 caracteres"
+            />
+          </label>
+
+          <label htmlFor="confirm-password">
+            Confirmer le mot de passe
+            <input
+              id="confirm-password"
+              autoComplete="new-password"
+              type="password"
+              value={confirmPassword}
+              onChange={(event) => {
+                setConfirmPassword(event.target.value);
+                setPasswordStatus({ type: "", message: "" });
+              }}
+              placeholder="Repeter le mot de passe"
+            />
+          </label>
+        </div>
+
+        {passwordStatus.message && (
+          <div className={`password-status ${passwordStatus.type}`}>{passwordStatus.message}</div>
+        )}
+
+        <button type="submit" disabled={isUpdatingPassword}>
+          {isUpdatingPassword ? "Mise a jour..." : "Modifier le mot de passe"}
+        </button>
+      </form>
     </section>
   );
 }
@@ -956,7 +1053,8 @@ function SupervisorDashboard({
   pressingName,
   role,
   selectedOrder,
-  setSelectedOrder
+  setSelectedOrder,
+  userEmail
 }) {
   const [activeView, setActiveView] = useState("dashboard");
 
@@ -997,7 +1095,9 @@ function SupervisorDashboard({
 
       {activeView === "clients" && <ClientsReport orderHistory={orderHistory} />}
 
-      {activeView === "settings" && <SettingsView pressingName={pressingName} role={role} />}
+      {activeView === "settings" && (
+        <SettingsView pressingName={pressingName} role={role} userEmail={userEmail} />
+      )}
 
       <TicketReadModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />
     </AppShell>
@@ -1623,6 +1723,7 @@ function App() {
         role={currentRole}
         selectedOrder={selectedReportOrder}
         setSelectedOrder={setSelectedReportOrder}
+        userEmail={adminSession.user.email}
       />
     );
   }
@@ -1760,7 +1861,11 @@ function App() {
         )}
 
         {activeAdminView === "settings" && (
-          <SettingsView pressingName={currentPressingName} role={currentRole} />
+          <SettingsView
+            pressingName={currentPressingName}
+            role={currentRole}
+            userEmail={adminSession.user.email}
+          />
         )}
 
         <TicketReadModal order={selectedReportOrder} onClose={() => setSelectedReportOrder(null)} />
