@@ -380,6 +380,105 @@ h2 {
   box-shadow: 0 0 0 4px rgba(21, 94, 239, 0.12);
 }
 
+.fanico-pricing-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.fanico-price-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 16px;
+}
+
+.fanico-price-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 1000;
+}
+
+.fanico-price-form input {
+  min-height: 56px;
+  width: 100%;
+  border: 3px solid var(--ink);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 800;
+  padding: 10px 12px;
+}
+
+.fanico-price-form input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px rgba(21, 94, 239, 0.12);
+}
+
+.fanico-price-form button,
+.fanico-price-item button {
+  min-height: 56px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--blue);
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 1000;
+  padding: 10px 14px;
+}
+
+.fanico-price-form button:hover {
+  background: var(--blue-dark);
+}
+
+.fanico-price-list {
+  display: grid;
+  gap: 10px;
+}
+
+.fanico-price-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.fanico-price-item div {
+  display: grid;
+  gap: 4px;
+}
+
+.fanico-price-item strong {
+  color: var(--ink);
+  font-size: 1.1rem;
+}
+
+.fanico-price-item small {
+  color: var(--green-dark);
+  font-size: 1rem;
+  font-weight: 1000;
+}
+
+.fanico-price-item button {
+  background: var(--red-soft);
+  color: #991b1b;
+}
+
+.fanico-price-item button:hover {
+  background: var(--red);
+  color: #ffffff;
+}
+
 .section-heading span {
   background: #dbeafe;
   color: #1d4ed8;
@@ -2364,6 +2463,7 @@ h2 {
   .history-actions,
   .settings-grid,
   .password-fields,
+  .fanico-price-form,
   .price-service-tabs,
   .stock-tabs,
   .stock-item,
@@ -2372,8 +2472,14 @@ h2 {
   }
 
   .password-settings button,
-  .article-create-form button {
+  .article-create-form button,
+  .fanico-price-form button {
     justify-self: stretch;
+  }
+
+  .fanico-price-item {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .pickup-result {

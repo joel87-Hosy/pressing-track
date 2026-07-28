@@ -22,14 +22,16 @@ const MOCK_ARTICLES = [
 const DEFAULT_ARTICLE_IDS = new Set(MOCK_ARTICLES.map((article) => article.id));
 const CUSTOM_ARTICLES_STORAGE_KEY = "pressingtrack-custom-articles";
 const DEFAULT_PRICE_OPTION_ID = "normal";
+const FANICO_PRICE_OPTION_ID = "fanico";
+const FANICO_BUNDLE_PREFIX = "bundle-";
 const PRICE_OPTION_SEPARATOR = "__";
 const PRICE_OPTIONS = [
   { id: "normal", label: "Lavage normal" },
   { id: "dry_cleaning", label: "Lavage a sec" },
   { id: "steam", label: "Lavage a vapeur" },
-  { id: "fanico", label: "Fanico" }
+  { id: FANICO_PRICE_OPTION_ID, label: "Fanico" }
 ];
-const DEPOSIT_PRICE_OPTIONS = PRICE_OPTIONS.filter((option) => option.id !== "fanico");
+const DEPOSIT_PRICE_OPTIONS = PRICE_OPTIONS.filter((option) => option.id !== FANICO_PRICE_OPTION_ID);
 const PRICE_OPTION_IDS = new Set(PRICE_OPTIONS.map((option) => option.id));
 
 const MOCK_RESERVES = [
@@ -240,6 +242,14 @@ function getOptionPrices(articlePrices, priceOptionId) {
 
 function getPriceOptionLabel(priceOptionId) {
   return PRICE_OPTIONS.find((option) => option.id === priceOptionId)?.label || "Lavage normal";
+}
+
+function getFanicoBundleId(quantity) {
+  return `${FANICO_BUNDLE_PREFIX}${quantity}`;
+}
+
+function getFanicoBundleQuantity(bundleId) {
+  return Number(bundleId.replace(FANICO_BUNDLE_PREFIX, ""));
 }
 
 function getWeekKey(date) {
@@ -1417,6 +1427,8 @@ function App() {
   const [customArticles, setCustomArticles] = useState(getStoredCustomArticles);
   const [isPriceEditorOpen, setIsPriceEditorOpen] = useState(false);
   const [activePriceOption, setActivePriceOption] = useState(DEFAULT_PRICE_OPTION_ID);
+  const [fanicoQuantity, setFanicoQuantity] = useState("");
+  const [fanicoPrice, setFanicoPrice] = useState("");
   const [ticketItems, setTicketItems] = useState([]);
   const [selectedArticle, setSelectedArticle] = useState(null);
   const [selectedWashOption, setSelectedWashOption] = useState(DEFAULT_PRICE_OPTION_ID);
@@ -1489,6 +1501,19 @@ function App() {
       };
     });
   }, [articlePrices, selectedArticle]);
+  const fanicoRows = useMemo(() => {
+    const fanicoPrices = getOptionPrices(articlePrices, FANICO_PRICE_OPTION_ID);
+
+    return Object.entries(fanicoPrices)
+      .filter(([bundleId]) => bundleId.startsWith(FANICO_BUNDLE_PREFIX))
+      .map(([bundleId, price]) => ({
+        id: bundleId,
+        quantity: getFanicoBundleQuantity(bundleId),
+        price
+      }))
+      .filter((row) => Number.isFinite(row.quantity) && row.quantity > 0)
+      .sort((a, b) => a.quantity - b.quantity);
+  }, [articlePrices]);
 
   const canValidate = ticketItems.length > 0 && phone.length >= 8;
   const visibleHistory = useMemo(() => {
@@ -1750,6 +1775,91 @@ function App() {
     saveArticlePrice(articleId, safePrice, priceOptionId);
   }
 
+  async function saveFanicoBundlePrice(bundleId, quantity, price) {
+    if (!isSupabaseConfigured || !currentPressingId) {
+      return true;
+    }
+
+    const { error } = await supabase
+      .from("article_prices")
+      .upsert(
+        {
+          pressing_id: currentPressingId,
+          article_id: getPriceRowId(FANICO_PRICE_OPTION_ID, bundleId),
+          article_name: `${quantity} vetements`,
+          price,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: "pressing_id,article_id" }
+      );
+
+    if (error) {
+      setDatabaseError("Sauvegarde du tarif Fanico echouee dans Supabase.");
+      return false;
+    }
+
+    setDatabaseError("");
+    return true;
+  }
+
+  async function upsertFanicoBundle(event) {
+    event.preventDefault();
+
+    const quantityValue = Number(fanicoQuantity.replace(/\D/g, ""));
+    const priceValue = Number(fanicoPrice.replace(/\D/g, ""));
+
+    if (!quantityValue || !priceValue) {
+      setDatabaseError("Saisissez une quantite et un prix Fanico valides.");
+      return;
+    }
+
+    const bundleId = getFanicoBundleId(quantityValue);
+    const saved = await saveFanicoBundlePrice(bundleId, quantityValue, priceValue);
+
+    if (!saved) {
+      return;
+    }
+
+    setArticlePrices((current) => ({
+      ...current,
+      [FANICO_PRICE_OPTION_ID]: {
+        ...getOptionPrices(current, FANICO_PRICE_OPTION_ID),
+        [bundleId]: priceValue
+      }
+    }));
+    setFanicoQuantity("");
+    setFanicoPrice("");
+  }
+
+  async function deleteFanicoBundle(bundleId) {
+    setArticlePrices((current) => {
+      const nextFanicoPrices = { ...getOptionPrices(current, FANICO_PRICE_OPTION_ID) };
+      delete nextFanicoPrices[bundleId];
+
+      return {
+        ...current,
+        [FANICO_PRICE_OPTION_ID]: nextFanicoPrices
+      };
+    });
+
+    if (!isSupabaseConfigured || !currentPressingId) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("article_prices")
+      .delete()
+      .eq("pressing_id", currentPressingId)
+      .eq("article_id", getPriceRowId(FANICO_PRICE_OPTION_ID, bundleId));
+
+    if (error) {
+      setDatabaseError("Suppression du tarif Fanico echouee dans Supabase.");
+      return;
+    }
+
+    setDatabaseError("");
+  }
+
   async function resetArticlePrices(priceOptionId = DEFAULT_PRICE_OPTION_ID) {
     setArticlePrices((current) => ({
       ...current,
@@ -1763,6 +1873,22 @@ function App() {
     }));
 
     if (!isSupabaseConfigured || !currentPressingId) {
+      return;
+    }
+
+    if (priceOptionId === FANICO_PRICE_OPTION_ID) {
+      const { error } = await supabase
+        .from("article_prices")
+        .delete()
+        .eq("pressing_id", currentPressingId)
+        .like("article_id", `${FANICO_PRICE_OPTION_ID}${PRICE_OPTION_SEPARATOR}%`);
+
+      if (error) {
+        setDatabaseError("Reinitialisation des prix Supabase echouee.");
+        return;
+      }
+
+      setDatabaseError("");
       return;
     }
 
@@ -2194,7 +2320,7 @@ function App() {
                 type="button"
                 onClick={() => resetArticlePrices(activePriceOption)}
               >
-                Prix par defaut
+                {activePriceOption === FANICO_PRICE_OPTION_ID ? "Vider Fanico" : "Prix par defaut"}
               </button>
             </div>
 
@@ -2215,23 +2341,73 @@ function App() {
               ))}
             </div>
 
-            <div className="price-editor-grid">
-              {activePricedArticles.map((article) => (
-                <label className="price-field" key={article.id}>
-                  <span>
-                    <strong>{article.name}</strong>
-                    <small>{article.icon}</small>
-                  </span>
-                  <input
-                    inputMode="numeric"
-                    value={article.price}
-                    onChange={(event) =>
-                      updateArticlePrice(article.id, event.target.value, activePriceOption)
-                    }
-                  />
-                </label>
-              ))}
-            </div>
+            {activePriceOption === FANICO_PRICE_OPTION_ID ? (
+              <div className="fanico-pricing-panel">
+                <form className="fanico-price-form" onSubmit={upsertFanicoBundle}>
+                  <label htmlFor="fanico-quantity">
+                    Nombre de vetements
+                    <input
+                      id="fanico-quantity"
+                      inputMode="numeric"
+                      value={fanicoQuantity}
+                      onChange={(event) => setFanicoQuantity(event.target.value.replace(/\D/g, ""))}
+                      placeholder="Ex: 5"
+                    />
+                  </label>
+
+                  <label htmlFor="fanico-price">
+                    Prix du lot
+                    <input
+                      id="fanico-price"
+                      inputMode="numeric"
+                      value={fanicoPrice}
+                      onChange={(event) => setFanicoPrice(event.target.value.replace(/\D/g, ""))}
+                      placeholder="Ex: 2500"
+                    />
+                  </label>
+
+                  <button type="submit">Enregistrer le tarif</button>
+                </form>
+
+                <div className="fanico-price-list">
+                  {fanicoRows.length === 0 ? (
+                    <div className="empty-history">Aucun tarif Fanico defini.</div>
+                  ) : (
+                    fanicoRows.map((row) => (
+                      <article className="fanico-price-item" key={row.id}>
+                        <div>
+                          <strong>
+                            {row.quantity} vetement{row.quantity > 1 ? "s" : ""}
+                          </strong>
+                          <small>{formatMoney(row.price)}</small>
+                        </div>
+                        <button type="button" onClick={() => deleteFanicoBundle(row.id)}>
+                          Supprimer
+                        </button>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="price-editor-grid">
+                {activePricedArticles.map((article) => (
+                  <label className="price-field" key={article.id}>
+                    <span>
+                      <strong>{article.name}</strong>
+                      <small>{article.icon}</small>
+                    </span>
+                    <input
+                      inputMode="numeric"
+                      value={article.price}
+                      onChange={(event) =>
+                        updateArticlePrice(article.id, event.target.value, activePriceOption)
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
           </section>
         )}
 
