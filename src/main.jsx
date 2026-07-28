@@ -21,6 +21,16 @@ const MOCK_ARTICLES = [
 
 const DEFAULT_ARTICLE_IDS = new Set(MOCK_ARTICLES.map((article) => article.id));
 const CUSTOM_ARTICLES_STORAGE_KEY = "pressingtrack-custom-articles";
+const DEFAULT_PRICE_OPTION_ID = "normal";
+const PRICE_OPTION_SEPARATOR = "__";
+const PRICE_OPTIONS = [
+  { id: "normal", label: "Lavage normal" },
+  { id: "dry_cleaning", label: "Lavage a sec" },
+  { id: "steam", label: "Lavage a vapeur" },
+  { id: "fanico", label: "Fanico" }
+];
+const DEPOSIT_PRICE_OPTIONS = PRICE_OPTIONS.filter((option) => option.id !== "fanico");
+const PRICE_OPTION_IDS = new Set(PRICE_OPTIONS.map((option) => option.id));
 
 const MOCK_RESERVES = [
   "Col sale",
@@ -132,13 +142,16 @@ function getStoredHistory() {
 
 function getStoredArticlePrices() {
   if (isSupabaseConfigured) {
-    return {};
+    return { [DEFAULT_PRICE_OPTION_ID]: {} };
   }
 
   try {
-    return JSON.parse(localStorage.getItem("pressingtrack-article-prices")) || {};
+    const storedPrices = JSON.parse(localStorage.getItem("pressingtrack-article-prices")) || {};
+    return storedPrices[DEFAULT_PRICE_OPTION_ID]
+      ? storedPrices
+      : { [DEFAULT_PRICE_OPTION_ID]: storedPrices };
   } catch {
-    return {};
+    return { [DEFAULT_PRICE_OPTION_ID]: {} };
   }
 }
 
@@ -190,6 +203,43 @@ function createCustomArticle({ id, name, price }) {
     price,
     isCustom: true
   };
+}
+
+function createEmptyPriceOptions() {
+  return PRICE_OPTIONS.reduce((prices, option) => {
+    prices[option.id] = {};
+    return prices;
+  }, {});
+}
+
+function getPriceRowId(priceOptionId, articleId) {
+  return priceOptionId === DEFAULT_PRICE_OPTION_ID
+    ? articleId
+    : `${priceOptionId}${PRICE_OPTION_SEPARATOR}${articleId}`;
+}
+
+function parsePriceRowId(rowId) {
+  const [possibleOptionId, ...articleIdParts] = rowId.split(PRICE_OPTION_SEPARATOR);
+
+  if (articleIdParts.length > 0 && PRICE_OPTION_IDS.has(possibleOptionId)) {
+    return {
+      priceOptionId: possibleOptionId,
+      articleId: articleIdParts.join(PRICE_OPTION_SEPARATOR)
+    };
+  }
+
+  return {
+    priceOptionId: DEFAULT_PRICE_OPTION_ID,
+    articleId: rowId
+  };
+}
+
+function getOptionPrices(articlePrices, priceOptionId) {
+  return articlePrices[priceOptionId] || {};
+}
+
+function getPriceOptionLabel(priceOptionId) {
+  return PRICE_OPTIONS.find((option) => option.id === priceOptionId)?.label || "Lavage normal";
 }
 
 function getWeekKey(date) {
@@ -268,6 +318,7 @@ function buildArticleSummary(item, index) {
 
   return [
     `${index + 1}. ${articleName}`,
+    item.washOptionLabel ? `   Lavage: ${item.washOptionLabel}` : "",
     `   Reserve(s): ${item.reserve}`,
     `   Details: ${detailParts.join(" - ")}`,
     item.details.note ? `   Note: ${item.details.note}` : ""
@@ -1194,6 +1245,7 @@ function TicketReadModal({ order, onClose }) {
                     : item.name}
                 </strong>
               </div>
+              {item.washOptionLabel && <p>{item.washOptionLabel}</p>}
               <p>{item.reserve}</p>
               <small>
                 {item.details.color} - {item.details.fabric} - {item.details.pattern} -{" "}
@@ -1364,8 +1416,10 @@ function App() {
   const [articlePrices, setArticlePrices] = useState(getStoredArticlePrices);
   const [customArticles, setCustomArticles] = useState(getStoredCustomArticles);
   const [isPriceEditorOpen, setIsPriceEditorOpen] = useState(false);
+  const [activePriceOption, setActivePriceOption] = useState(DEFAULT_PRICE_OPTION_ID);
   const [ticketItems, setTicketItems] = useState([]);
   const [selectedArticle, setSelectedArticle] = useState(null);
+  const [selectedWashOption, setSelectedWashOption] = useState(DEFAULT_PRICE_OPTION_ID);
   const [selectedReserves, setSelectedReserves] = useState([]);
   const [isDetailsStep, setIsDetailsStep] = useState(false);
   const [quantity, setQuantity] = useState(1);
@@ -1391,19 +1445,50 @@ function App() {
     () => ticketItems.reduce((sum, item) => sum + item.price, 0),
     [ticketItems]
   );
+  const normalArticlePrices = getOptionPrices(articlePrices, DEFAULT_PRICE_OPTION_ID);
+  const activeArticlePrices = getOptionPrices(articlePrices, activePriceOption);
   const pricedArticles = useMemo(
     () => [
       ...MOCK_ARTICLES.map((article) => ({
         ...article,
-        price: articlePrices[article.id] ?? article.price
+        price: normalArticlePrices[article.id] ?? article.price
       })),
       ...customArticles.map((article) => ({
         ...article,
-        price: articlePrices[article.id] ?? article.price
+        price: normalArticlePrices[article.id] ?? article.price
       }))
     ],
-    [articlePrices, customArticles]
+    [normalArticlePrices, customArticles]
   );
+  const activePricedArticles = useMemo(
+    () =>
+      pricedArticles.map((article) => ({
+        ...article,
+        price:
+          activePriceOption === DEFAULT_PRICE_OPTION_ID
+            ? article.price
+            : activeArticlePrices[article.id] ?? 0
+      })),
+    [activeArticlePrices, activePriceOption, pricedArticles]
+  );
+  const selectedArticlePriceOptions = useMemo(() => {
+    if (!selectedArticle) {
+      return [];
+    }
+
+    return DEPOSIT_PRICE_OPTIONS.map((option) => {
+      const optionPrices = getOptionPrices(articlePrices, option.id);
+      const price =
+        option.id === DEFAULT_PRICE_OPTION_ID
+          ? selectedArticle.price
+          : optionPrices[selectedArticle.id] ?? 0;
+
+      return {
+        ...option,
+        price
+      };
+    });
+  }, [articlePrices, selectedArticle]);
 
   const canValidate = ticketItems.length > 0 && phone.length >= 8;
   const visibleHistory = useMemo(() => {
@@ -1541,15 +1626,19 @@ function App() {
         return;
       }
 
-      const nextPrices = data.reduce((prices, row) => {
-        prices[row.article_id] = row.price;
-        return prices;
-      }, {});
+      const nextPrices = createEmptyPriceOptions();
+      data.forEach((row) => {
+        const { priceOptionId, articleId } = parsePriceRowId(row.article_id);
+        nextPrices[priceOptionId][articleId] = row.price;
+      });
       const nextCustomArticles = data
-        .filter((row) => !DEFAULT_ARTICLE_IDS.has(row.article_id))
+        .filter((row) => {
+          const { priceOptionId, articleId } = parsePriceRowId(row.article_id);
+          return priceOptionId === DEFAULT_PRICE_OPTION_ID && !DEFAULT_ARTICLE_IDS.has(articleId);
+        })
         .map((row) =>
           createCustomArticle({
-            id: row.article_id,
+            id: parsePriceRowId(row.article_id).articleId,
             name: row.article_name,
             price: row.price
           })
@@ -1564,6 +1653,7 @@ function App() {
   }, [adminSession, currentPressingId, isAdmin]);
 
   function resetArticleModal() {
+    setSelectedWashOption(DEFAULT_PRICE_OPTION_ID);
     setSelectedReserves([]);
     setIsDetailsStep(false);
     setQuantity(1);
@@ -1575,7 +1665,7 @@ function App() {
     resetArticleModal();
   }
 
-  async function saveArticlePrice(articleId, price) {
+  async function saveArticlePrice(articleId, price, priceOptionId = DEFAULT_PRICE_OPTION_ID) {
     if (!isSupabaseConfigured || !currentPressingId) {
       return;
     }
@@ -1586,7 +1676,7 @@ function App() {
       .upsert(
         {
           pressing_id: currentPressingId,
-          article_id: articleId,
+          article_id: getPriceRowId(priceOptionId, articleId),
           article_name: article?.name || articleId,
           price,
           updated_at: new Date().toISOString()
@@ -1638,39 +1728,54 @@ function App() {
     setCustomArticles((current) => [...current, article].sort((a, b) => a.name.localeCompare(b.name, "fr")));
     setArticlePrices((current) => ({
       ...current,
-      [article.id]: article.price
+      [DEFAULT_PRICE_OPTION_ID]: {
+        ...getOptionPrices(current, DEFAULT_PRICE_OPTION_ID),
+        [article.id]: article.price
+      }
     }));
     setDatabaseError("");
     return { ok: true };
   }
 
-  function updateArticlePrice(articleId, value) {
+  function updateArticlePrice(articleId, value, priceOptionId = DEFAULT_PRICE_OPTION_ID) {
     const nextPrice = Number(value.replace(/\D/g, ""));
     const safePrice = Number.isNaN(nextPrice) ? 0 : nextPrice;
     setArticlePrices((current) => ({
       ...current,
-      [articleId]: safePrice
+      [priceOptionId]: {
+        ...getOptionPrices(current, priceOptionId),
+        [articleId]: safePrice
+      }
     }));
-    saveArticlePrice(articleId, safePrice);
+    saveArticlePrice(articleId, safePrice, priceOptionId);
   }
 
-  async function resetArticlePrices() {
-    setArticlePrices(
-      customArticles.reduce((prices, article) => {
+  async function resetArticlePrices(priceOptionId = DEFAULT_PRICE_OPTION_ID) {
+    setArticlePrices((current) => ({
+      ...current,
+      [priceOptionId]:
+        priceOptionId === DEFAULT_PRICE_OPTION_ID
+          ? customArticles.reduce((prices, article) => {
         prices[article.id] = article.price;
         return prices;
       }, {})
-    );
+          : {}
+    }));
 
     if (!isSupabaseConfigured || !currentPressingId) {
       return;
     }
 
+    const articleIds =
+      priceOptionId === DEFAULT_PRICE_OPTION_ID
+        ? MOCK_ARTICLES.map((article) => article.id)
+        : pricedArticles.map((article) => getPriceRowId(priceOptionId, article.id));
+
     const { error } = await supabase
       .from("article_prices")
       .delete()
       .eq("pressing_id", currentPressingId)
-      .in("article_id", MOCK_ARTICLES.map((article) => article.id));
+      .in("article_id", articleIds);
 
     if (error) {
       setDatabaseError("Reinitialisation des prix Supabase echouee.");
@@ -1709,9 +1814,17 @@ function App() {
   }
 
   function addArticles() {
+    const selectedOption = selectedArticlePriceOptions.find(
+      (option) => option.id === selectedWashOption
+    );
+    const selectedPrice = selectedOption?.price ?? selectedArticle.price;
+
     const itemsToAdd = detailItems.map((details, index) => ({
       lineId: crypto.randomUUID(),
       ...selectedArticle,
+      price: selectedPrice,
+      washOptionId: selectedWashOption,
+      washOptionLabel: getPriceOptionLabel(selectedWashOption),
       copyNumber: index + 1,
       copyTotal: quantity,
       reserves: selectedReserves,
@@ -2074,14 +2187,36 @@ function App() {
             <div className="section-heading">
               <div>
                 <h2>Prix</h2>
-                <p>Prix personnalises pour ce pressing.</p>
+                <p>Grilles tarifaires par type de lavage.</p>
               </div>
-              <button className="price-editor-toggle" type="button" onClick={resetArticlePrices}>
+              <button
+                className="price-editor-toggle"
+                type="button"
+                onClick={() => resetArticlePrices(activePriceOption)}
+              >
                 Prix par defaut
               </button>
             </div>
+
+            <div className="price-service-tabs" role="tablist" aria-label="Type de lavage">
+              {PRICE_OPTIONS.map((option) => (
+                <button
+                  className={
+                    activePriceOption === option.id
+                      ? "price-service-tab active"
+                      : "price-service-tab"
+                  }
+                  key={option.id}
+                  type="button"
+                  onClick={() => setActivePriceOption(option.id)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
             <div className="price-editor-grid">
-              {pricedArticles.map((article) => (
+              {activePricedArticles.map((article) => (
                 <label className="price-field" key={article.id}>
                   <span>
                     <strong>{article.name}</strong>
@@ -2090,7 +2225,9 @@ function App() {
                   <input
                     inputMode="numeric"
                     value={article.price}
-                    onChange={(event) => updateArticlePrice(article.id, event.target.value)}
+                    onChange={(event) =>
+                      updateArticlePrice(article.id, event.target.value, activePriceOption)
+                    }
                   />
                 </label>
               ))}
@@ -2232,6 +2369,7 @@ function App() {
                       {item.name}
                       {item.copyTotal > 1 ? ` ${item.copyNumber}/${item.copyTotal}` : ""}
                     </strong>
+                    {item.washOptionLabel && <p>{item.washOptionLabel}</p>}
                     <p>{item.reserve}</p>
                     <small>
                       {item.details.color} - {item.details.fabric} - {item.details.pattern} -{" "}
@@ -2445,6 +2583,27 @@ function App() {
 
             {!isDetailsStep ? (
               <div className="reserve-step">
+                <div className="wash-option-group">
+                  <p>Type de lavage</p>
+                  <div className="wash-option-grid">
+                    {selectedArticlePriceOptions.map((option) => (
+                      <button
+                        className={
+                          selectedWashOption === option.id
+                            ? "wash-option-button selected"
+                            : "wash-option-button"
+                        }
+                        key={option.id}
+                        type="button"
+                        onClick={() => setSelectedWashOption(option.id)}
+                      >
+                        <span>{option.label}</span>
+                        <strong>{formatMoney(option.price)}</strong>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="reserve-grid">
                   {MOCK_RESERVES.map((reserve) => {
                     const isSelected = selectedReserves.includes(reserve);
@@ -2484,6 +2643,16 @@ function App() {
               <div className="details-form">
                 <div className="selected-reserve">
                   Reserves: <strong>{selectedReserves.join(" + ")}</strong>
+                </div>
+
+                <div className="selected-reserve">
+                  Lavage: <strong>{getPriceOptionLabel(selectedWashOption)}</strong> -{" "}
+                  <strong>
+                    {formatMoney(
+                      selectedArticlePriceOptions.find((option) => option.id === selectedWashOption)
+                        ?.price ?? selectedArticle.price
+                    )}
+                  </strong>
                 </div>
 
                 <div className="quantity-group">
@@ -2621,6 +2790,7 @@ function App() {
                         : item.name}
                     </strong>
                   </div>
+                  {item.washOptionLabel && <p>{item.washOptionLabel}</p>}
                   <p>{item.reserve}</p>
                   <small>
                     {item.details.color} - {item.details.fabric} - {item.details.pattern} -{" "}

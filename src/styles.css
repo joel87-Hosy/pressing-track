@@ -304,6 +304,35 @@ h2 {
   padding-right: 4px;
 }
 
+.price-service-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.price-service-tab {
+  min-height: 52px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.98rem;
+  font-weight: 1000;
+  padding: 10px;
+}
+
+.price-service-tab:hover {
+  border-color: var(--blue);
+}
+
+.price-service-tab.active {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #ffffff;
+}
+
 .price-field {
   display: grid;
   gap: 8px;
@@ -1045,6 +1074,58 @@ h2 {
 .reserve-step {
   display: grid;
   gap: 18px;
+}
+
+.wash-option-group {
+  display: grid;
+  gap: 10px;
+}
+
+.wash-option-group p {
+  color: var(--ink);
+  font-size: 1.18rem;
+  font-weight: 1000;
+}
+
+.wash-option-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wash-option-button {
+  display: grid;
+  gap: 8px;
+  min-height: 92px;
+  border: 3px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 14px;
+  text-align: left;
+}
+
+.wash-option-button:hover {
+  border-color: var(--blue);
+  background: #eff6ff;
+}
+
+.wash-option-button.selected {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #ffffff;
+}
+
+.wash-option-button span {
+  font-size: 1rem;
+  font-weight: 1000;
+}
+
+.wash-option-button strong {
+  color: inherit;
+  font-size: 1.25rem;
+  font-weight: 1000;
 }
 
 .reserve-button {
@@ -2263,6 +2344,10 @@ h2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .wash-option-grid {
+    grid-template-columns: 1fr;
+  }
+
   .article-button {
     grid-template-columns: 1fr;
     grid-template-areas:
@@ -2279,6 +2364,7 @@ h2 {
   .history-actions,
   .settings-grid,
   .password-fields,
+  .price-service-tabs,
   .stock-tabs,
   .stock-item,
   .pickup-summary {
