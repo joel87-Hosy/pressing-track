@@ -1968,6 +1968,31 @@ function App() {
     setValidatedOrder(null);
   }
 
+  function addFanicoBundleToTicket(row) {
+    setTicketItems((current) => [
+      ...current,
+      {
+        lineId: crypto.randomUUID(),
+        id: `${FANICO_PRICE_OPTION_ID}-${row.id}`,
+        name: `Fanico ${row.quantity} vetement${row.quantity > 1 ? "s" : ""}`,
+        icon: "FA",
+        price: row.price,
+        washOptionId: FANICO_PRICE_OPTION_ID,
+        washOptionLabel: "Fanico",
+        copyNumber: 1,
+        copyTotal: 1,
+        reserves: ["Lot Fanico"],
+        reserve: `${row.quantity} vetement${row.quantity > 1 ? "s" : ""}`,
+        details: {
+          ...EMPTY_DETAILS,
+          brand: "Non precise",
+          note: `Lot Fanico: ${row.quantity} vetement${row.quantity > 1 ? "s" : ""}`
+        }
+      }
+    ]);
+    setValidatedOrder(null);
+  }
+
   function closeModal() {
     setSelectedArticle(null);
     resetArticleModal();
@@ -2507,6 +2532,35 @@ function App() {
               </button>
             ))}
           </div>
+
+          <section className="deposit-fanico-section" aria-label="Fanico">
+            <div className="deposit-fanico-heading">
+              <div>
+                <h2>Fanico</h2>
+                <p>Ajout rapide par lot de vetements.</p>
+              </div>
+            </div>
+
+            {fanicoRows.length === 0 ? (
+              <div className="empty-history">Ajoutez un tarif dans Prix &gt; Fanico.</div>
+            ) : (
+              <div className="deposit-fanico-grid">
+                {fanicoRows.map((row) => (
+                  <button
+                    className="deposit-fanico-button"
+                    key={row.id}
+                    type="button"
+                    onClick={() => addFanicoBundleToTicket(row)}
+                  >
+                    <span>
+                      {row.quantity} vetement{row.quantity > 1 ? "s" : ""}
+                    </span>
+                    <strong>{formatMoney(row.price)}</strong>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       </section>
 

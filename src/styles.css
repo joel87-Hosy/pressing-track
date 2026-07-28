@@ -537,6 +537,7 @@ h2 {
 .reserve-button:active,
 .detail-pill:active,
 .quantity-button:active,
+.deposit-fanico-button:active,
 .add-button:active,
 .back-button:active,
 .continue-button:active {
@@ -574,6 +575,70 @@ h2 {
   align-self: end;
   color: var(--green-dark);
   font-size: 1.12rem;
+}
+
+.deposit-fanico-section {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  border-top: 2px solid var(--line);
+  padding-top: 16px;
+}
+
+.deposit-fanico-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.deposit-fanico-heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.55rem;
+  line-height: 1.05;
+}
+
+.deposit-fanico-heading p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.deposit-fanico-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.deposit-fanico-button {
+  display: grid;
+  gap: 8px;
+  min-height: 102px;
+  border: 3px solid var(--ink);
+  border-radius: 8px;
+  background: #dcfce7;
+  color: #14532d;
+  cursor: pointer;
+  padding: 14px;
+  text-align: left;
+}
+
+.deposit-fanico-button:hover {
+  border-color: var(--green-dark);
+  background: #bbf7d0;
+  box-shadow: 0 8px 18px rgba(22, 101, 52, 0.16);
+}
+
+.deposit-fanico-button span {
+  font-size: 1.05rem;
+  font-weight: 1000;
+}
+
+.deposit-fanico-button strong {
+  font-size: 1.28rem;
+  font-weight: 1000;
 }
 
 .clear-button,
