@@ -19,6 +19,9 @@ const MOCK_ARTICLES = [
   { id: "bag", name: "Sac", icon: "SA", price: 4000 }
 ];
 
+const DEFAULT_ARTICLE_IDS = new Set(MOCK_ARTICLES.map((article) => article.id));
+const CUSTOM_ARTICLES_STORAGE_KEY = "pressingtrack-custom-articles";
+
 const MOCK_RESERVES = [
   "Col sale",
   "Tache graisse",
@@ -137,6 +140,56 @@ function getStoredArticlePrices() {
   } catch {
     return {};
   }
+}
+
+function getStoredCustomArticles() {
+  if (isSupabaseConfigured) {
+    return [];
+  }
+
+  try {
+    return JSON.parse(localStorage.getItem(CUSTOM_ARTICLES_STORAGE_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function getArticleIcon(name) {
+  const words = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (words.length >= 2) {
+    return words
+      .slice(0, 2)
+      .map((word) => word[0])
+      .join("")
+      .toUpperCase();
+  }
+
+  return (words[0] || "AR").slice(0, 2).toUpperCase();
+}
+
+function slugifyArticleName(name) {
+  const slug = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return slug || "article";
+}
+
+function createCustomArticle({ id, name, price }) {
+  return {
+    id,
+    name,
+    icon: getArticleIcon(name),
+    price,
+    isCustom: true
+  };
 }
 
 function getWeekKey(date) {
@@ -307,6 +360,7 @@ const ADMIN_MENU = [
   { id: "stock", label: "Stock" },
   { id: "tickets", label: "Tickets" },
   { id: "clients", label: "Clients" },
+  { id: "addArticle", label: "Ajouter article" },
   { id: "prices", label: "Prix" },
   { id: "settings", label: "Parametres" }
 ];
@@ -980,6 +1034,116 @@ function SettingsView({ pressingName, role, userEmail }) {
   );
 }
 
+function AddArticleView({ articles, onAddArticle }) {
+  const [articleName, setArticleName] = useState("");
+  const [articlePrice, setArticlePrice] = useState("");
+  const [articleStatus, setArticleStatus] = useState({ type: "", message: "" });
+  const [isSaving, setIsSaving] = useState(false);
+
+  async function submitArticle(event) {
+    event.preventDefault();
+    setArticleStatus({ type: "", message: "" });
+
+    const cleanName = articleName.trim().replace(/\s+/g, " ");
+    const numericPrice = Number(articlePrice.replace(/\D/g, ""));
+
+    if (cleanName.length < 2) {
+      setArticleStatus({ type: "error", message: "Saisissez le nom de l'article." });
+      return;
+    }
+
+    if (!numericPrice || numericPrice < 1) {
+      setArticleStatus({ type: "error", message: "Saisissez un prix valide." });
+      return;
+    }
+
+    const normalizedName = cleanName.toLocaleLowerCase("fr-FR");
+    const alreadyExists = articles.some(
+      (article) => article.name.toLocaleLowerCase("fr-FR") === normalizedName
+    );
+
+    if (alreadyExists) {
+      setArticleStatus({ type: "error", message: "Cet article existe deja dans la liste." });
+      return;
+    }
+
+    setIsSaving(true);
+    const result = await onAddArticle({ name: cleanName, price: numericPrice });
+    setIsSaving(false);
+
+    if (!result.ok) {
+      setArticleStatus({ type: "error", message: result.message });
+      return;
+    }
+
+    setArticleName("");
+    setArticlePrice("");
+    setArticleStatus({ type: "success", message: "Article ajoute a la liste." });
+  }
+
+  return (
+    <section className="report-section" aria-label="Ajouter un article">
+      <div className="section-heading">
+        <div>
+          <h2>Ajouter un article</h2>
+          <p>Creation d'un article absent de la liste actuelle.</p>
+        </div>
+      </div>
+
+      <form className="article-create-form" onSubmit={submitArticle}>
+        <label htmlFor="new-article-name">
+          Nom de l'article
+          <input
+            id="new-article-name"
+            value={articleName}
+            onChange={(event) => {
+              setArticleName(event.target.value);
+              setArticleStatus({ type: "", message: "" });
+            }}
+            placeholder="Ex: Boubou"
+          />
+        </label>
+
+        <label htmlFor="new-article-price">
+          Prix
+          <input
+            id="new-article-price"
+            inputMode="numeric"
+            value={articlePrice}
+            onChange={(event) => {
+              setArticlePrice(event.target.value.replace(/\D/g, ""));
+              setArticleStatus({ type: "", message: "" });
+            }}
+            placeholder="Ex: 2500"
+          />
+        </label>
+
+        {articleStatus.message && (
+          <div className={`password-status ${articleStatus.type}`}>{articleStatus.message}</div>
+        )}
+
+        <button type="submit" disabled={isSaving}>
+          {isSaving ? "Enregistrement..." : "Ajouter l'article"}
+        </button>
+      </form>
+
+      <div className="article-preview-list" aria-label="Articles disponibles">
+        {articles.map((article) => (
+          <article className="article-preview-item" key={article.id}>
+            <span className="mini-icon" aria-hidden="true">
+              {article.icon}
+            </span>
+            <div>
+              <strong>{article.name}</strong>
+              <small>{formatMoney(article.price)}</small>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function TicketReadModal({ order, onClose }) {
   if (!order) {
     return null;
@@ -1198,6 +1362,7 @@ function App() {
   const [adminSession, setAdminSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const [articlePrices, setArticlePrices] = useState(getStoredArticlePrices);
+  const [customArticles, setCustomArticles] = useState(getStoredCustomArticles);
   const [isPriceEditorOpen, setIsPriceEditorOpen] = useState(false);
   const [ticketItems, setTicketItems] = useState([]);
   const [selectedArticle, setSelectedArticle] = useState(null);
@@ -1227,12 +1392,17 @@ function App() {
     [ticketItems]
   );
   const pricedArticles = useMemo(
-    () =>
-      MOCK_ARTICLES.map((article) => ({
+    () => [
+      ...MOCK_ARTICLES.map((article) => ({
         ...article,
         price: articlePrices[article.id] ?? article.price
       })),
-    [articlePrices]
+      ...customArticles.map((article) => ({
+        ...article,
+        price: articlePrices[article.id] ?? article.price
+      }))
+    ],
+    [articlePrices, customArticles]
   );
 
   const canValidate = ticketItems.length > 0 && phone.length >= 8;
@@ -1271,6 +1441,15 @@ function App() {
 
     localStorage.setItem("pressingtrack-article-prices", JSON.stringify(articlePrices));
   }, [articlePrices]);
+
+  useEffect(() => {
+    if (isSupabaseConfigured) {
+      localStorage.removeItem(CUSTOM_ARTICLES_STORAGE_KEY);
+      return;
+    }
+
+    localStorage.setItem(CUSTOM_ARTICLES_STORAGE_KEY, JSON.stringify(customArticles));
+  }, [customArticles]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -1362,15 +1541,23 @@ function App() {
         return;
       }
 
-      const nextPrices = data.reduce(
-        (prices, row) => ({
-          ...prices,
-          [row.article_id]: row.price
-        }),
-        {}
-      );
+      const nextPrices = data.reduce((prices, row) => {
+        prices[row.article_id] = row.price;
+        return prices;
+      }, {});
+      const nextCustomArticles = data
+        .filter((row) => !DEFAULT_ARTICLE_IDS.has(row.article_id))
+        .map((row) =>
+          createCustomArticle({
+            id: row.article_id,
+            name: row.article_name,
+            price: row.price
+          })
+        )
+        .sort((a, b) => a.name.localeCompare(b.name, "fr"));
 
       setArticlePrices(nextPrices);
+      setCustomArticles(nextCustomArticles);
     }
 
     loadArticlePrices();
@@ -1393,7 +1580,7 @@ function App() {
       return;
     }
 
-    const article = MOCK_ARTICLES.find((item) => item.id === articleId);
+    const article = pricedArticles.find((item) => item.id === articleId);
     const { error } = await supabase
       .from("article_prices")
       .upsert(
@@ -1415,6 +1602,48 @@ function App() {
     setDatabaseError("");
   }
 
+  async function addCustomArticle({ name, price }) {
+    const baseId = `custom-${slugifyArticleName(name)}`;
+    const existingIds = new Set(pricedArticles.map((article) => article.id));
+    let articleId = baseId;
+    let suffix = 2;
+
+    while (existingIds.has(articleId)) {
+      articleId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+
+    const article = createCustomArticle({ id: articleId, name, price });
+
+    if (isSupabaseConfigured && currentPressingId) {
+      const { error } = await supabase
+        .from("article_prices")
+        .upsert(
+          {
+            pressing_id: currentPressingId,
+            article_id: article.id,
+            article_name: article.name,
+            price: article.price,
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: "pressing_id,article_id" }
+        );
+
+      if (error) {
+        setDatabaseError("Ajout de l'article echoue dans Supabase.");
+        return { ok: false, message: "Ajout impossible dans Supabase." };
+      }
+    }
+
+    setCustomArticles((current) => [...current, article].sort((a, b) => a.name.localeCompare(b.name, "fr")));
+    setArticlePrices((current) => ({
+      ...current,
+      [article.id]: article.price
+    }));
+    setDatabaseError("");
+    return { ok: true };
+  }
+
   function updateArticlePrice(articleId, value) {
     const nextPrice = Number(value.replace(/\D/g, ""));
     const safePrice = Number.isNaN(nextPrice) ? 0 : nextPrice;
@@ -1426,7 +1655,12 @@ function App() {
   }
 
   async function resetArticlePrices() {
-    setArticlePrices({});
+    setArticlePrices(
+      customArticles.reduce((prices, article) => {
+        prices[article.id] = article.price;
+        return prices;
+      }, {})
+    );
 
     if (!isSupabaseConfigured || !currentPressingId) {
       return;
@@ -1436,7 +1670,7 @@ function App() {
       .from("article_prices")
       .delete()
       .eq("pressing_id", currentPressingId)
-      .neq("article_id", "");
+      .in("article_id", MOCK_ARTICLES.map((article) => article.id));
 
     if (error) {
       setDatabaseError("Reinitialisation des prix Supabase echouee.");
@@ -1830,6 +2064,10 @@ function App() {
         {activeAdminView === "stock" && <StockView orderHistory={orderHistory} />}
 
         {activeAdminView === "clients" && <ClientsReport orderHistory={orderHistory} />}
+
+        {activeAdminView === "addArticle" && (
+          <AddArticleView articles={pricedArticles} onAddArticle={addCustomArticle} />
+        )}
 
         {activeAdminView === "prices" && (
           <section className="report-section" aria-label="Prix">
