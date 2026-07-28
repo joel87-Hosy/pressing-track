@@ -60,6 +60,7 @@ const EMPTY_DETAILS = {
 };
 
 const QUANTITY_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const FANICO_QUANTITY_PRESETS = [5, 10, 15, 20, 25, 30];
 const KEYPAD = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "Effacer", "0", "Retour"];
 const HISTORY_PERIODS = [
   { id: "day", label: "Jour" },
@@ -2368,6 +2369,10 @@ function App() {
 
             {activePriceOption === FANICO_PRICE_OPTION_ID ? (
               <div className="fanico-pricing-panel">
+                <div className="fanico-pricing-note">
+                  Ajoutez autant de cas que necessaire: 5, 10, 15, 20 vetements ou plus.
+                </div>
+
                 <form className="fanico-price-form" onSubmit={upsertFanicoBundle}>
                   <label htmlFor="fanico-quantity">
                     Nombre de vetements
@@ -2391,8 +2396,21 @@ function App() {
                     />
                   </label>
 
-                  <button type="submit">Enregistrer le tarif</button>
+                  <button type="submit">Ajouter / modifier ce cas</button>
                 </form>
+
+                <div className="fanico-quantity-presets" aria-label="Quantites rapides Fanico">
+                  {FANICO_QUANTITY_PRESETS.map((preset) => (
+                    <button
+                      className={fanicoQuantity === String(preset) ? "selected" : ""}
+                      key={preset}
+                      type="button"
+                      onClick={() => setFanicoQuantity(String(preset))}
+                    >
+                      {preset} vetements
+                    </button>
+                  ))}
+                </div>
 
                 <div className="fanico-price-list">
                   {fanicoRows.length === 0 ? (
@@ -2537,12 +2555,14 @@ function App() {
             <div className="deposit-fanico-heading">
               <div>
                 <h2>Fanico</h2>
-                <p>Ajout rapide par lot de vetements.</p>
+                <p>Selectionnez le tarif correspondant au nombre de vetements.</p>
               </div>
             </div>
 
             {fanicoRows.length === 0 ? (
-              <div className="empty-history">Ajoutez un tarif dans Prix &gt; Fanico.</div>
+              <div className="empty-history">
+                Ajoutez plusieurs cas dans Prix &gt; Fanico: 5, 10, 15 vetements ou plus.
+              </div>
             ) : (
               <div className="deposit-fanico-grid">
                 {fanicoRows.map((row) => (
