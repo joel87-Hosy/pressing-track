@@ -6,11 +6,22 @@ create table if not exists pressings (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   owner_email text,
+  billing_email text,
+  plan_name text not null default 'Standard',
+  monthly_fee integer not null default 0,
   subscription_status text not null default 'active',
+  subscription_started_at timestamptz not null default now(),
+  trial_ends_at timestamptz,
   ticket_counter integer not null default 103,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table pressings add column if not exists billing_email text;
+alter table pressings add column if not exists plan_name text not null default 'Standard';
+alter table pressings add column if not exists monthly_fee integer not null default 0;
+alter table pressings add column if not exists subscription_started_at timestamptz not null default now();
+alter table pressings add column if not exists trial_ends_at timestamptz;
 
 insert into pressings (id, name, owner_email)
 values ('00000000-0000-0000-0000-000000000001', 'Pressing legacy', 'admin@pressingtrack.com')
@@ -75,6 +86,18 @@ as $$
     or (public.is_admin() and target_pressing_id = public.current_pressing_id());
 $$;
 
+create or replace view platform_user_accounts as
+select
+  users.id,
+  users.email,
+  users.created_at,
+  users.last_sign_in_at,
+  users.raw_app_meta_data ->> 'role' as role,
+  nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid as pressing_id,
+  users.raw_app_meta_data ->> 'pressing_name' as pressing_name
+from auth.users
+where public.is_platform_admin();
+
 create or replace function next_ticket_number()
 returns text
 language plpgsql
@@ -134,6 +157,18 @@ alter table tickets add column if not exists picked_up_at timestamptz;
 update tickets set pressing_id = '00000000-0000-0000-0000-000000000001' where pressing_id is null;
 alter table tickets alter column pressing_id set not null;
 
+create table if not exists pressing_invoices (
+  id uuid primary key default gen_random_uuid(),
+  pressing_id uuid not null references pressings(id),
+  period_month text not null,
+  amount integer not null default 0,
+  status text not null default 'pending',
+  due_date date not null,
+  paid_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists article_prices (
   pressing_id uuid references pressings(id),
   article_id text not null,
@@ -160,10 +195,16 @@ create index if not exists tickets_pressing_status_idx on tickets (pressing_id, 
 create index if not exists tickets_created_at_idx on tickets (created_at desc);
 create index if not exists tickets_status_idx on tickets (status);
 create index if not exists article_prices_pressing_idx on article_prices (pressing_id);
+create index if not exists pressing_invoices_pressing_idx on pressing_invoices (pressing_id);
+create index if not exists pressing_invoices_status_idx on pressing_invoices (status);
+
+grant select on platform_user_accounts to authenticated;
+grant select, insert, update, delete on pressing_invoices to authenticated;
 
 alter table pressings enable row level security;
 alter table tickets enable row level security;
 alter table article_prices enable row level security;
+alter table pressing_invoices enable row level security;
 
 drop policy if exists "MVP public ticket read" on tickets;
 drop policy if exists "MVP public ticket insert" on tickets;
@@ -185,6 +226,7 @@ drop policy if exists "Tenant article price read" on article_prices;
 drop policy if exists "Tenant article price write" on article_prices;
 drop policy if exists "Tenant pressing read" on pressings;
 drop policy if exists "Platform pressing write" on pressings;
+drop policy if exists "Platform invoice management" on pressing_invoices;
 
 revoke all on function next_ticket_number() from public;
 revoke all on function next_ticket_number() from anon;
@@ -233,6 +275,12 @@ on article_prices for all
 to authenticated
 using (public.can_write_pressing(pressing_id))
 with check (public.can_write_pressing(pressing_id));
+
+create policy "Platform invoice management"
+on pressing_invoices for all
+to authenticated
+using (public.is_platform_admin())
+with check (public.is_platform_admin());
 
 -- Creation d'un nouveau pressing client:
 -- 1. Executez cette requete en changeant le nom et l'email proprietaire.

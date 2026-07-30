@@ -76,7 +76,7 @@ const STATUS_LABELS = {
 const ROLE_LABELS = {
   admin: "Admin",
   supervisor: "Superviseur",
-  platform_admin: "Plateforme"
+  platform_admin: "Super Admin"
 };
 
 function canAccessDashboard(role) {
@@ -436,6 +436,31 @@ const SUPERVISOR_MENU = [
   { id: "settings", label: "Parametres" }
 ];
 
+const PLATFORM_MENU = [
+  { id: "overview", label: "Vue globale" },
+  { id: "pressings", label: "Pressings" },
+  { id: "users", label: "Utilisateurs" },
+  { id: "billing", label: "Abonnements" },
+  { id: "tickets", label: "Tickets" },
+  { id: "settings", label: "Parametres" }
+];
+
+const SUBSCRIPTION_STATUS_LABELS = {
+  active: "Actif",
+  trial: "Essai",
+  past_due: "Impaye",
+  suspended: "Suspendu",
+  canceled: "Resilie"
+};
+
+const INVOICE_STATUS_LABELS = {
+  draft: "Brouillon",
+  pending: "En attente",
+  paid: "Payee",
+  overdue: "En retard",
+  canceled: "Annulee"
+};
+
 const STOCK_TABS = [
   { id: "dirty", label: "Attente lavage" },
   { id: "ready", label: "Pret retrait" },
@@ -554,6 +579,72 @@ function getLastSevenDayRows(orderHistory) {
 
 function getTopClientRows(orderHistory) {
   return getClientRows(orderHistory).slice(0, 5);
+}
+
+function fromDatabasePressing(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    ownerEmail: row.owner_email,
+    billingEmail: row.billing_email,
+    planName: row.plan_name || "Standard",
+    monthlyFee: row.monthly_fee || 0,
+    subscriptionStatus: row.subscription_status,
+    subscriptionStartedAt: row.subscription_started_at,
+    trialEndsAt: row.trial_ends_at,
+    ticketCounter: row.ticket_counter,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function fromDatabaseInvoice(row) {
+  return {
+    id: row.id,
+    pressingId: row.pressing_id,
+    pressingName: row.pressings?.name || "",
+    periodMonth: row.period_month,
+    amount: row.amount || 0,
+    status: row.status || "pending",
+    dueDate: row.due_date,
+    paidAt: row.paid_at,
+    createdAt: row.created_at
+  };
+}
+
+function fromDatabasePlatformUser(row) {
+  return {
+    id: row.id,
+    email: row.email,
+    role: row.role || "sans role",
+    pressingId: row.pressing_id,
+    pressingName: row.pressing_name,
+    createdAt: row.created_at,
+    lastSignInAt: row.last_sign_in_at
+  };
+}
+
+function getPlatformPressingRows(pressings, orderHistory, platformUsers) {
+  return pressings
+    .map((pressing) => {
+      const tickets = orderHistory.filter((order) => order.pressingId === pressing.id);
+      const users = platformUsers.filter((user) => user.pressingId === pressing.id);
+      const pickedUpTickets = tickets.filter((order) => order.status === "PICKED_UP").length;
+      const processingTickets = tickets.filter((order) => order.status === "IN_PROCESSING").length;
+      const totalRevenue = tickets.reduce((sum, order) => sum + order.total, 0);
+      const lastTicket = tickets[0]?.createdAt || null;
+
+      return {
+        ...pressing,
+        tickets: tickets.length,
+        pickedUpTickets,
+        processingTickets,
+        totalRevenue,
+        users: users.length,
+        lastTicket
+      };
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 function AppShell({ activeView, children, menuItems, onLogout, onSelectView, pressingName, role }) {
@@ -831,6 +922,388 @@ function ClientsReport({ orderHistory }) {
 
       <ClientDetailModal client={selectedClient} onClose={() => setSelectedClient(null)} />
     </>
+  );
+}
+
+function PlatformDashboard({
+  databaseError,
+  historyLoading,
+  onLogout,
+  orderHistory,
+  onUpdateInvoiceStatus,
+  onUpdatePressingSubscription,
+  platformInvoices,
+  platformLoading,
+  platformPressings,
+  platformUsers,
+  pressingName,
+  role,
+  selectedOrder,
+  setSelectedOrder,
+  userEmail
+}) {
+  const [activeView, setActiveView] = useState("overview");
+  const pressingRows = useMemo(
+    () => getPlatformPressingRows(platformPressings, orderHistory, platformUsers),
+    [orderHistory, platformPressings, platformUsers]
+  );
+  const activePressings = pressingRows.filter((pressing) => pressing.subscriptionStatus === "active");
+  const suspendedPressings = pressingRows.filter(
+    (pressing) => pressing.subscriptionStatus === "suspended"
+  );
+  const unpaidInvoices = platformInvoices.filter((invoice) =>
+    ["pending", "overdue"].includes(invoice.status)
+  );
+  const totalRevenue = orderHistory.reduce((sum, order) => sum + order.total, 0);
+  const monthlyRecurringRevenue = activePressings.reduce(
+    (sum, pressing) => sum + pressing.monthlyFee,
+    0
+  );
+  const unpaidAmount = unpaidInvoices.reduce((sum, invoice) => sum + invoice.amount, 0);
+  const userRoleCounts = platformUsers.reduce((counts, user) => {
+    counts[user.role] = (counts[user.role] || 0) + 1;
+    return counts;
+  }, {});
+
+  return (
+    <AppShell
+      activeView={activeView}
+      menuItems={PLATFORM_MENU}
+      onLogout={onLogout}
+      onSelectView={setActiveView}
+      pressingName={pressingName}
+      role={role}
+    >
+      {databaseError && <div className="database-error">{databaseError}</div>}
+
+      {activeView === "overview" && (
+        <div className="workspace-stack">
+          <section className="report-grid" aria-label="Indicateurs plateforme">
+            <article className="report-card">
+              <span>Pressings</span>
+              <strong>{platformPressings.length}</strong>
+            </article>
+            <article className="report-card">
+              <span>Actifs</span>
+              <strong>{activePressings.length}</strong>
+            </article>
+            <article className="report-card">
+              <span>Suspendus</span>
+              <strong>{suspendedPressings.length}</strong>
+            </article>
+            <article className="report-card">
+              <span>Impayes</span>
+              <strong>{unpaidInvoices.length}</strong>
+            </article>
+            <article className="report-card wide">
+              <span>MRR plateforme</span>
+              <strong>{formatMoney(monthlyRecurringRevenue)}</strong>
+            </article>
+            <article className="report-card wide">
+              <span>Chiffre clients</span>
+              <strong>{formatMoney(totalRevenue)}</strong>
+            </article>
+            <article className="report-card wide">
+              <span>Factures dues</span>
+              <strong>{formatMoney(unpaidAmount)}</strong>
+            </article>
+          </section>
+
+          <section className="report-section" aria-label="Synthese des roles">
+            <div className="section-heading">
+              <div>
+                <h2>Comptes par role</h2>
+                <p>Repartition de tous les utilisateurs de l'application.</p>
+              </div>
+              <strong>{platformUsers.length}</strong>
+            </div>
+            <div className="role-count-grid">
+              {Object.entries(userRoleCounts).length === 0 ? (
+                <div className="empty-history">Aucun compte utilisateur a afficher.</div>
+              ) : (
+                Object.entries(userRoleCounts).map(([userRole, count]) => (
+                  <article className="role-count-card" key={userRole}>
+                    <span>{ROLE_LABELS[userRole] || userRole}</span>
+                    <strong>{count}</strong>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+
+          <PlatformPressingsTable loading={platformLoading} pressingRows={pressingRows.slice(0, 8)} />
+        </div>
+      )}
+
+      {activeView === "pressings" && (
+        <PlatformPressingsTable loading={platformLoading} pressingRows={pressingRows} />
+      )}
+
+      {activeView === "users" && (
+        <PlatformUsersTable loading={platformLoading} platformUsers={platformUsers} />
+      )}
+
+      {activeView === "billing" && (
+        <PlatformBillingView
+          loading={platformLoading}
+          onUpdateInvoiceStatus={onUpdateInvoiceStatus}
+          onUpdatePressingSubscription={onUpdatePressingSubscription}
+          platformInvoices={platformInvoices}
+          pressingRows={pressingRows}
+        />
+      )}
+
+      {activeView === "tickets" && (
+        <TicketsReport
+          historyLoading={historyLoading}
+          onSelectOrder={setSelectedOrder}
+          orderHistory={orderHistory}
+          title="Tous les tickets"
+        />
+      )}
+
+      {activeView === "settings" && (
+        <SettingsView pressingName={pressingName} role={role} userEmail={userEmail} />
+      )}
+
+      <TicketReadModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+    </AppShell>
+  );
+}
+
+function PlatformPressingsTable({ loading, pressingRows }) {
+  return (
+    <section className="report-section" aria-label="Liste des pressings">
+      <div className="section-heading">
+        <div>
+          <h2>Pressings</h2>
+          <p>Date de creation et utilisation de chaque compte pressing.</p>
+        </div>
+        <strong>{pressingRows.length}</strong>
+      </div>
+
+      <div className="report-table">
+        <div className="platform-pressing-row report-row-head">
+          <span>Pressing</span>
+          <span>Abonnement</span>
+          <span>Creation</span>
+          <span>Comptes</span>
+          <span>Tickets</span>
+          <span>En cours</span>
+          <span>Dernier depot</span>
+          <span>Total</span>
+        </div>
+
+        {loading ? (
+          <div className="empty-history">Chargement des pressings...</div>
+        ) : pressingRows.length === 0 ? (
+          <div className="empty-history">Aucun pressing a afficher.</div>
+        ) : (
+          pressingRows.map((pressing) => (
+            <article className="platform-pressing-row platform-row" key={pressing.id}>
+              <div>
+                <strong>{pressing.name}</strong>
+                <span>{pressing.ownerEmail || "Email proprietaire non renseigne"}</span>
+              </div>
+              <span>{SUBSCRIPTION_STATUS_LABELS[pressing.subscriptionStatus] || pressing.subscriptionStatus}</span>
+              <span>{formatDateTime(pressing.createdAt)}</span>
+              <strong>{pressing.users}</strong>
+              <strong>{pressing.tickets}</strong>
+              <span>{pressing.processingTickets}</span>
+              <span>{formatDateTime(pressing.lastTicket)}</span>
+              <strong>{formatMoney(pressing.totalRevenue)}</strong>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PlatformBillingView({
+  loading,
+  onUpdateInvoiceStatus,
+  onUpdatePressingSubscription,
+  platformInvoices,
+  pressingRows
+}) {
+  const unpaidInvoices = platformInvoices.filter((invoice) =>
+    ["pending", "overdue"].includes(invoice.status)
+  );
+  const monthlyRecurringRevenue = pressingRows
+    .filter((pressing) => pressing.subscriptionStatus === "active")
+    .reduce((sum, pressing) => sum + pressing.monthlyFee, 0);
+  const unpaidAmount = unpaidInvoices.reduce((sum, invoice) => sum + invoice.amount, 0);
+
+  return (
+    <div className="workspace-stack">
+      <section className="report-grid" aria-label="Indicateurs abonnements">
+        <article className="report-card">
+          <span>Abonnes actifs</span>
+          <strong>
+            {pressingRows.filter((pressing) => pressing.subscriptionStatus === "active").length}
+          </strong>
+        </article>
+        <article className="report-card">
+          <span>Essais</span>
+          <strong>
+            {pressingRows.filter((pressing) => pressing.subscriptionStatus === "trial").length}
+          </strong>
+        </article>
+        <article className="report-card">
+          <span>Factures dues</span>
+          <strong>{unpaidInvoices.length}</strong>
+        </article>
+        <article className="report-card wide">
+          <span>MRR plateforme</span>
+          <strong>{formatMoney(monthlyRecurringRevenue)}</strong>
+        </article>
+        <article className="report-card wide">
+          <span>Montant du</span>
+          <strong>{formatMoney(unpaidAmount)}</strong>
+        </article>
+      </section>
+
+      <section className="report-section" aria-label="Gestion des abonnements">
+        <div className="section-heading">
+          <div>
+            <h2>Abonnements</h2>
+            <p>Plans, montants mensuels et statut de chaque pressing.</p>
+          </div>
+          <strong>{pressingRows.length}</strong>
+        </div>
+
+        <div className="report-table">
+          <div className="billing-subscription-row report-row-head">
+            <span>Pressing</span>
+            <span>Plan</span>
+            <span>Mensuel</span>
+            <span>Statut</span>
+            <span>Debut</span>
+            <span>Action</span>
+          </div>
+
+          {loading ? (
+            <div className="empty-history">Chargement des abonnements...</div>
+          ) : pressingRows.length === 0 ? (
+            <div className="empty-history">Aucun abonnement a afficher.</div>
+          ) : (
+            pressingRows.map((pressing) => (
+              <article className="billing-subscription-row platform-row" key={pressing.id}>
+                <div>
+                  <strong>{pressing.name}</strong>
+                  <span>{pressing.billingEmail || pressing.ownerEmail || "Email facturation absent"}</span>
+                </div>
+                <span>{pressing.planName}</span>
+                <strong>{formatMoney(pressing.monthlyFee)}</strong>
+                <span>
+                  {SUBSCRIPTION_STATUS_LABELS[pressing.subscriptionStatus] ||
+                    pressing.subscriptionStatus}
+                </span>
+                <span>{formatDateOnly(pressing.subscriptionStartedAt || pressing.createdAt)}</span>
+                <select
+                  value={pressing.subscriptionStatus}
+                  onChange={(event) => onUpdatePressingSubscription(pressing.id, event.target.value)}
+                >
+                  {Object.entries(SUBSCRIPTION_STATUS_LABELS).map(([status, label]) => (
+                    <option key={status} value={status}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="report-section" aria-label="Gestion des factures">
+        <div className="section-heading">
+          <div>
+            <h2>Factures</h2>
+            <p>Suivi des paiements et des factures en retard.</p>
+          </div>
+          <strong>{platformInvoices.length}</strong>
+        </div>
+
+        <div className="report-table">
+          <div className="billing-invoice-row report-row-head">
+            <span>Pressing</span>
+            <span>Periode</span>
+            <span>Montant</span>
+            <span>Echeance</span>
+            <span>Statut</span>
+            <span>Action</span>
+          </div>
+
+          {loading ? (
+            <div className="empty-history">Chargement des factures...</div>
+          ) : platformInvoices.length === 0 ? (
+            <div className="empty-history">Aucune facture a afficher.</div>
+          ) : (
+            platformInvoices.map((invoice) => (
+              <article className="billing-invoice-row platform-row" key={invoice.id}>
+                <strong>{invoice.pressingName || invoice.pressingId}</strong>
+                <span>{invoice.periodMonth}</span>
+                <strong>{formatMoney(invoice.amount)}</strong>
+                <span>{formatDateOnly(invoice.dueDate)}</span>
+                <span>{INVOICE_STATUS_LABELS[invoice.status] || invoice.status}</span>
+                <select
+                  value={invoice.status}
+                  onChange={(event) => onUpdateInvoiceStatus(invoice.id, event.target.value)}
+                >
+                  {Object.entries(INVOICE_STATUS_LABELS).map(([status, label]) => (
+                    <option key={status} value={status}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PlatformUsersTable({ loading, platformUsers }) {
+  return (
+    <section className="report-section" aria-label="Liste des utilisateurs">
+      <div className="section-heading">
+        <div>
+          <h2>Utilisateurs</h2>
+          <p>Tous les comptes, tous roles confondus, avec creation et derniere connexion.</p>
+        </div>
+        <strong>{platformUsers.length}</strong>
+      </div>
+
+      <div className="report-table">
+        <div className="platform-user-row report-row-head">
+          <span>Email</span>
+          <span>Role</span>
+          <span>Pressing</span>
+          <span>Creation compte</span>
+          <span>Derniere connexion</span>
+        </div>
+
+        {loading ? (
+          <div className="empty-history">Chargement des utilisateurs...</div>
+        ) : platformUsers.length === 0 ? (
+          <div className="empty-history">Aucun compte utilisateur a afficher.</div>
+        ) : (
+          platformUsers.map((user) => (
+            <article className="platform-user-row platform-row" key={user.id}>
+              <strong>{user.email || "Email non renseigne"}</strong>
+              <span>{ROLE_LABELS[user.role] || user.role}</span>
+              <span>{user.pressingName || "Plateforme"}</span>
+              <span>{formatDateTime(user.createdAt)}</span>
+              <span>{formatDateTime(user.lastSignInAt)}</span>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -1443,6 +1916,10 @@ function App() {
   const [orderHistory, setOrderHistory] = useState(getStoredHistory);
   const [historyLoading, setHistoryLoading] = useState(isSupabaseConfigured);
   const [databaseError, setDatabaseError] = useState("");
+  const [platformPressings, setPlatformPressings] = useState([]);
+  const [platformUsers, setPlatformUsers] = useState([]);
+  const [platformInvoices, setPlatformInvoices] = useState([]);
+  const [platformLoading, setPlatformLoading] = useState(false);
   const [pickupQuery, setPickupQuery] = useState("");
   const [selectedPickupOrder, setSelectedPickupOrder] = useState(null);
   const [selectedReportOrder, setSelectedReportOrder] = useState(null);
@@ -1677,6 +2154,99 @@ function App() {
 
     loadArticlePrices();
   }, [adminSession, currentPressingId, isAdmin]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !adminSession || !isPlatformAdmin) {
+      setPlatformLoading(false);
+      setPlatformPressings([]);
+      setPlatformUsers([]);
+      setPlatformInvoices([]);
+      return;
+    }
+
+    async function loadPlatformData() {
+      setPlatformLoading(true);
+      setDatabaseError("");
+
+      const [
+        { data: pressingsData, error: pressingsError },
+        { data: usersData, error: usersError },
+        { data: invoicesData, error: invoicesError }
+      ] = await Promise.all([
+          supabase.from("pressings").select("*").order("created_at", { ascending: false }),
+          supabase.from("platform_user_accounts").select("*").order("created_at", { ascending: false }),
+          supabase
+            .from("pressing_invoices")
+            .select("*, pressings(name)")
+            .order("created_at", { ascending: false })
+        ]);
+
+      if (pressingsError || usersError || invoicesError) {
+        setDatabaseError(
+          "Lecture plateforme incomplete. Executez la mise a jour SQL pour activer utilisateurs, abonnements et factures."
+        );
+        setPlatformLoading(false);
+        return;
+      }
+
+      setPlatformPressings(pressingsData.map(fromDatabasePressing));
+      setPlatformUsers(usersData.map(fromDatabasePlatformUser));
+      setPlatformInvoices(invoicesData.map(fromDatabaseInvoice));
+      setPlatformLoading(false);
+    }
+
+    loadPlatformData();
+  }, [adminSession, isPlatformAdmin]);
+
+  async function updatePressingSubscription(pressingId, subscriptionStatus) {
+    setPlatformPressings((current) =>
+      current.map((pressing) =>
+        pressing.id === pressingId
+          ? { ...pressing, subscriptionStatus, updatedAt: new Date().toISOString() }
+          : pressing
+      )
+    );
+
+    if (!isSupabaseConfigured || !isPlatformAdmin) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("pressings")
+      .update({ subscription_status: subscriptionStatus, updated_at: new Date().toISOString() })
+      .eq("id", pressingId);
+
+    if (error) {
+      setDatabaseError("Mise a jour de l'abonnement echouee dans Supabase.");
+      return;
+    }
+
+    setDatabaseError("");
+  }
+
+  async function updateInvoiceStatus(invoiceId, status) {
+    const paidAt = status === "paid" ? new Date().toISOString() : null;
+
+    setPlatformInvoices((current) =>
+      current.map((invoice) => (invoice.id === invoiceId ? { ...invoice, status, paidAt } : invoice))
+    );
+
+    if (!isSupabaseConfigured || !isPlatformAdmin) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("pressing_invoices")
+      .update({ status, paid_at: paidAt, updated_at: new Date().toISOString() })
+      .eq("id", invoiceId);
+
+    if (error) {
+      setDatabaseError("Mise a jour de la facture echouee dans Supabase.");
+      return;
+    }
+
+    setDatabaseError("");
+  }
 
   function resetArticleModal() {
     setSelectedWashOption(DEFAULT_PRICE_OPTION_ID);
@@ -2193,6 +2763,9 @@ function App() {
     setValidatedOrder(null);
     setSelectedPickupOrder(null);
     setSelectedReportOrder(null);
+    setPlatformPressings([]);
+    setPlatformUsers([]);
+    setPlatformInvoices([]);
   }
 
   if (authLoading) {
@@ -2209,6 +2782,28 @@ function App() {
 
   if (!adminSession) {
     return <LoginPage onLogin={setAdminSession} />;
+  }
+
+  if (isPlatformAdmin) {
+    return (
+      <PlatformDashboard
+        databaseError={databaseError}
+        historyLoading={historyLoading}
+        onLogout={logoutAdmin}
+        onUpdateInvoiceStatus={updateInvoiceStatus}
+        onUpdatePressingSubscription={updatePressingSubscription}
+        orderHistory={orderHistory}
+        platformInvoices={platformInvoices}
+        platformLoading={platformLoading}
+        platformPressings={platformPressings}
+        platformUsers={platformUsers}
+        pressingName="Super Admin"
+        role={currentRole}
+        selectedOrder={selectedReportOrder}
+        setSelectedOrder={setSelectedReportOrder}
+        userEmail={adminSession.user.email}
+      />
+    );
   }
 
   if (!isAdmin) {

@@ -2221,6 +2221,103 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.platform-pressing-row,
+.platform-user-row,
+.billing-subscription-row,
+.billing-invoice-row {
+  display: grid;
+  gap: 12px;
+  align-items: center;
+  min-width: 1040px;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.platform-pressing-row {
+  grid-template-columns: 1.45fr 0.8fr 1fr 0.55fr 0.55fr 0.65fr 1fr 0.9fr;
+}
+
+.platform-user-row {
+  grid-template-columns: 1.4fr 0.8fr 1fr 1fr 1fr;
+}
+
+.billing-subscription-row {
+  grid-template-columns: 1.35fr 0.75fr 0.75fr 0.75fr 0.85fr 0.9fr;
+}
+
+.billing-invoice-row {
+  grid-template-columns: 1.3fr 0.75fr 0.8fr 0.8fr 0.75fr 0.9fr;
+}
+
+.platform-row {
+  border: 2px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.platform-row div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.platform-row strong,
+.platform-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.platform-row span {
+  color: var(--muted);
+  font-size: 0.98rem;
+  font-weight: 900;
+}
+
+.platform-row select {
+  min-height: 46px;
+  width: 100%;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.98rem;
+  font-weight: 1000;
+  padding: 8px 10px;
+}
+
+.platform-row select:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px rgba(21, 94, 239, 0.12);
+}
+
+.role-count-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.role-count-card {
+  display: grid;
+  gap: 8px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 16px;
+}
+
+.role-count-card span {
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 1000;
+  text-transform: uppercase;
+}
+
+.role-count-card strong {
+  color: var(--ink);
+  font-size: 2rem;
+  line-height: 1;
+}
+
 .client-list {
   display: grid;
   gap: 10px;
