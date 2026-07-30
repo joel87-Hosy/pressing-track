@@ -169,6 +169,59 @@ create table if not exists pressing_invoices (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists platform_plans (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  monthly_fee integer not null default 0,
+  ticket_limit integer,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists platform_announcements (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  message text not null,
+  audience text not null default 'all',
+  status text not null default 'draft',
+  scheduled_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists platform_notifications (
+  id uuid primary key default gen_random_uuid(),
+  pressing_id uuid references pressings(id),
+  channel text not null,
+  recipient text not null,
+  subject text,
+  status text not null default 'pending',
+  sent_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists platform_support_tickets (
+  id uuid primary key default gen_random_uuid(),
+  pressing_id uuid references pressings(id),
+  subject text not null,
+  priority text not null default 'normal',
+  status text not null default 'open',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists platform_activity_logs (
+  id uuid primary key default gen_random_uuid(),
+  actor_user_id uuid,
+  actor_email text,
+  action text not null,
+  target_type text,
+  target_id text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists article_prices (
   pressing_id uuid references pressings(id),
   article_id text not null,
@@ -197,14 +250,27 @@ create index if not exists tickets_status_idx on tickets (status);
 create index if not exists article_prices_pressing_idx on article_prices (pressing_id);
 create index if not exists pressing_invoices_pressing_idx on pressing_invoices (pressing_id);
 create index if not exists pressing_invoices_status_idx on pressing_invoices (status);
+create index if not exists platform_notifications_pressing_idx on platform_notifications (pressing_id);
+create index if not exists platform_support_tickets_pressing_idx on platform_support_tickets (pressing_id);
+create index if not exists platform_activity_logs_created_idx on platform_activity_logs (created_at desc);
 
 grant select on platform_user_accounts to authenticated;
 grant select, insert, update, delete on pressing_invoices to authenticated;
+grant select, insert, update, delete on platform_plans to authenticated;
+grant select, insert, update, delete on platform_announcements to authenticated;
+grant select, insert, update, delete on platform_notifications to authenticated;
+grant select, insert, update, delete on platform_support_tickets to authenticated;
+grant select, insert, update, delete on platform_activity_logs to authenticated;
 
 alter table pressings enable row level security;
 alter table tickets enable row level security;
 alter table article_prices enable row level security;
 alter table pressing_invoices enable row level security;
+alter table platform_plans enable row level security;
+alter table platform_announcements enable row level security;
+alter table platform_notifications enable row level security;
+alter table platform_support_tickets enable row level security;
+alter table platform_activity_logs enable row level security;
 
 drop policy if exists "MVP public ticket read" on tickets;
 drop policy if exists "MVP public ticket insert" on tickets;
@@ -227,6 +293,11 @@ drop policy if exists "Tenant article price write" on article_prices;
 drop policy if exists "Tenant pressing read" on pressings;
 drop policy if exists "Platform pressing write" on pressings;
 drop policy if exists "Platform invoice management" on pressing_invoices;
+drop policy if exists "Platform plan management" on platform_plans;
+drop policy if exists "Platform announcement management" on platform_announcements;
+drop policy if exists "Platform notification management" on platform_notifications;
+drop policy if exists "Platform support management" on platform_support_tickets;
+drop policy if exists "Platform activity log management" on platform_activity_logs;
 
 revoke all on function next_ticket_number() from public;
 revoke all on function next_ticket_number() from anon;
@@ -278,6 +349,36 @@ with check (public.can_write_pressing(pressing_id));
 
 create policy "Platform invoice management"
 on pressing_invoices for all
+to authenticated
+using (public.is_platform_admin())
+with check (public.is_platform_admin());
+
+create policy "Platform plan management"
+on platform_plans for all
+to authenticated
+using (public.is_platform_admin())
+with check (public.is_platform_admin());
+
+create policy "Platform announcement management"
+on platform_announcements for all
+to authenticated
+using (public.is_platform_admin())
+with check (public.is_platform_admin());
+
+create policy "Platform notification management"
+on platform_notifications for all
+to authenticated
+using (public.is_platform_admin())
+with check (public.is_platform_admin());
+
+create policy "Platform support management"
+on platform_support_tickets for all
+to authenticated
+using (public.is_platform_admin())
+with check (public.is_platform_admin());
+
+create policy "Platform activity log management"
+on platform_activity_logs for all
 to authenticated
 using (public.is_platform_admin())
 with check (public.is_platform_admin());

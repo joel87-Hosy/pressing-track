@@ -437,12 +437,17 @@ const SUPERVISOR_MENU = [
 ];
 
 const PLATFORM_MENU = [
-  { id: "overview", label: "Vue globale" },
-  { id: "pressings", label: "Pressings" },
-  { id: "users", label: "Utilisateurs" },
-  { id: "billing", label: "Abonnements" },
-  { id: "tickets", label: "Tickets" },
-  { id: "settings", label: "Parametres" }
+  { id: "dashboard", label: "📊 Tableau de bord" },
+  { type: "separator" },
+  { id: "pressings", label: "🏪 Pressings" },
+  { id: "billing", label: "💳 Abonnements" },
+  { id: "analytics", label: "📈 Statistiques" },
+  { type: "separator" },
+  { id: "communication", label: "📢 Messagerie" },
+  { id: "support", label: "🎧 Support" },
+  { type: "separator" },
+  { id: "settings", label: "⚙️ Parametres" },
+  { id: "security", label: "🔐 Securite / Logs" }
 ];
 
 const SUBSCRIPTION_STATUS_LABELS = {
@@ -657,16 +662,20 @@ function AppShell({ activeView, children, menuItems, onLogout, onSelectView, pre
         </div>
 
         <nav className="workspace-nav">
-          {menuItems.map((item) => (
-            <button
-              className={activeView === item.id ? "workspace-nav-item active" : "workspace-nav-item"}
-              key={item.id}
-              type="button"
-              onClick={() => onSelectView(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
+          {menuItems.map((item, index) =>
+            item.type === "separator" ? (
+              <span className="workspace-nav-separator" key={`separator-${index}`} />
+            ) : (
+              <button
+                className={activeView === item.id ? "workspace-nav-item active" : "workspace-nav-item"}
+                key={item.id}
+                type="button"
+                onClick={() => onSelectView(item.id)}
+              >
+                {item.label}
+              </button>
+            )
+          )}
         </nav>
 
         <div className="workspace-account">
@@ -925,9 +934,62 @@ function ClientsReport({ orderHistory }) {
   );
 }
 
+function getSoonExpiringSubscriptions(pressingRows) {
+  const today = new Date();
+  const limit = new Date();
+  limit.setDate(today.getDate() + 14);
+
+  return pressingRows.filter((pressing) => {
+    if (!pressing.trialEndsAt) {
+      return false;
+    }
+
+    const trialEnd = new Date(pressing.trialEndsAt);
+    return trialEnd >= today && trialEnd <= limit;
+  });
+}
+
+function getMonthlyInvoiceRows(platformInvoices) {
+  const months = new Map();
+
+  platformInvoices
+    .filter((invoice) => invoice.status === "paid")
+    .forEach((invoice) => {
+      const key = invoice.periodMonth || invoice.createdAt?.slice(0, 7) || "Non classe";
+      months.set(key, (months.get(key) || 0) + invoice.amount);
+    });
+
+  return Array.from(months.entries())
+    .map(([month, amount]) => ({ month, amount }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+}
+
+function getUtilizationRows(pressingRows) {
+  return [...pressingRows]
+    .map((pressing) => {
+      const lastActivityDays = pressing.lastTicket
+        ? Math.floor((Date.now() - new Date(pressing.lastTicket).getTime()) / 86400000)
+        : null;
+
+      return {
+        ...pressing,
+        usageStatus:
+          lastActivityDays === null
+            ? "Jamais utilise"
+            : lastActivityDays > 30
+              ? "Abandon probable"
+              : lastActivityDays > 7
+                ? "Faible activite"
+                : "Actif"
+      };
+    })
+    .sort((a, b) => b.tickets - a.tickets);
+}
+
 function PlatformDashboard({
   databaseError,
   historyLoading,
+  onCreatePressing,
   onLogout,
   orderHistory,
   onUpdateInvoiceStatus,
@@ -942,18 +1004,21 @@ function PlatformDashboard({
   setSelectedOrder,
   userEmail
 }) {
-  const [activeView, setActiveView] = useState("overview");
+  const [activeView, setActiveView] = useState("dashboard");
+  const [selectedPressing, setSelectedPressing] = useState(null);
   const pressingRows = useMemo(
     () => getPlatformPressingRows(platformPressings, orderHistory, platformUsers),
     [orderHistory, platformPressings, platformUsers]
   );
   const activePressings = pressingRows.filter((pressing) => pressing.subscriptionStatus === "active");
+  const inactivePressings = pressingRows.filter((pressing) => pressing.subscriptionStatus !== "active");
   const suspendedPressings = pressingRows.filter(
     (pressing) => pressing.subscriptionStatus === "suspended"
   );
   const unpaidInvoices = platformInvoices.filter((invoice) =>
     ["pending", "overdue"].includes(invoice.status)
   );
+  const expiringSubscriptions = getSoonExpiringSubscriptions(pressingRows);
   const totalRevenue = orderHistory.reduce((sum, order) => sum + order.total, 0);
   const monthlyRecurringRevenue = activePressings.reduce(
     (sum, pressing) => sum + pressing.monthlyFee,
@@ -976,31 +1041,31 @@ function PlatformDashboard({
     >
       {databaseError && <div className="database-error">{databaseError}</div>}
 
-      {activeView === "overview" && (
+      {activeView === "dashboard" && (
         <div className="workspace-stack">
           <section className="report-grid" aria-label="Indicateurs plateforme">
             <article className="report-card">
-              <span>Pressings</span>
-              <strong>{platformPressings.length}</strong>
-            </article>
-            <article className="report-card">
-              <span>Actifs</span>
+              <span>Pressings actifs</span>
               <strong>{activePressings.length}</strong>
             </article>
             <article className="report-card">
-              <span>Suspendus</span>
-              <strong>{suspendedPressings.length}</strong>
+              <span>Inactifs</span>
+              <strong>{inactivePressings.length}</strong>
             </article>
             <article className="report-card">
-              <span>Impayes</span>
-              <strong>{unpaidInvoices.length}</strong>
+              <span>Tickets reseau</span>
+              <strong>{orderHistory.length}</strong>
+            </article>
+            <article className="report-card">
+              <span>Expirent bientot</span>
+              <strong>{expiringSubscriptions.length}</strong>
             </article>
             <article className="report-card wide">
-              <span>MRR plateforme</span>
+              <span>MRR abonnements</span>
               <strong>{formatMoney(monthlyRecurringRevenue)}</strong>
             </article>
             <article className="report-card wide">
-              <span>Chiffre clients</span>
+              <span>Chiffre pressings</span>
               <strong>{formatMoney(totalRevenue)}</strong>
             </article>
             <article className="report-card wide">
@@ -1009,10 +1074,16 @@ function PlatformDashboard({
             </article>
           </section>
 
+          <PlatformAlertList
+            expiringSubscriptions={expiringSubscriptions}
+            suspendedPressings={suspendedPressings}
+            unpaidInvoices={unpaidInvoices}
+          />
+
           <section className="report-section" aria-label="Synthese des roles">
             <div className="section-heading">
               <div>
-                <h2>Comptes par role</h2>
+                <h2>Utilisateurs par role</h2>
                 <p>Repartition de tous les utilisateurs de l'application.</p>
               </div>
               <strong>{platformUsers.length}</strong>
@@ -1031,16 +1102,24 @@ function PlatformDashboard({
             </div>
           </section>
 
-          <PlatformPressingsTable loading={platformLoading} pressingRows={pressingRows.slice(0, 8)} />
+          <PlatformPressingsTable
+            loading={platformLoading}
+            onSelectPressing={setSelectedPressing}
+            onUpdatePressingSubscription={onUpdatePressingSubscription}
+            pressingRows={pressingRows.slice(0, 8)}
+          />
         </div>
       )}
 
       {activeView === "pressings" && (
-        <PlatformPressingsTable loading={platformLoading} pressingRows={pressingRows} />
-      )}
-
-      {activeView === "users" && (
-        <PlatformUsersTable loading={platformLoading} platformUsers={platformUsers} />
+        <PlatformPressingsManager
+          loading={platformLoading}
+          onCreatePressing={onCreatePressing}
+          onSelectPressing={setSelectedPressing}
+          onUpdatePressingSubscription={onUpdatePressingSubscription}
+          platformUsers={platformUsers}
+          pressingRows={pressingRows}
+        />
       )}
 
       {activeView === "billing" && (
@@ -1053,25 +1132,209 @@ function PlatformDashboard({
         />
       )}
 
-      {activeView === "tickets" && (
-        <TicketsReport
+      {activeView === "analytics" && (
+        <PlatformAnalyticsView
           historyLoading={historyLoading}
+          monthlyInvoiceRows={getMonthlyInvoiceRows(platformInvoices)}
           onSelectOrder={setSelectedOrder}
           orderHistory={orderHistory}
-          title="Tous les tickets"
+          utilizationRows={getUtilizationRows(pressingRows)}
         />
       )}
 
+      {activeView === "communication" && (
+        <PlatformCommunicationView platformPressings={platformPressings} />
+      )}
+
+      {activeView === "support" && (
+        <PlatformSupportView />
+      )}
+
       {activeView === "settings" && (
-        <SettingsView pressingName={pressingName} role={role} userEmail={userEmail} />
+        <PlatformSystemSettingsView pressingName={pressingName} role={role} userEmail={userEmail} />
+      )}
+
+      {activeView === "security" && (
+        <PlatformSecurityLogsView platformUsers={platformUsers} />
       )}
 
       <TicketReadModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+      <PlatformPressingDetailModal
+        onClose={() => setSelectedPressing(null)}
+        onUpdatePressingSubscription={onUpdatePressingSubscription}
+        pressing={selectedPressing}
+        users={platformUsers.filter((user) => user.pressingId === selectedPressing?.id)}
+      />
     </AppShell>
   );
 }
 
-function PlatformPressingsTable({ loading, pressingRows }) {
+function PlatformAlertList({ expiringSubscriptions, suspendedPressings, unpaidInvoices }) {
+  const alerts = [
+    ...unpaidInvoices.slice(0, 3).map((invoice) => ({
+      id: `invoice-${invoice.id}`,
+      title: invoice.pressingName || "Facture sans pressing",
+      detail: `Facture ${invoice.periodMonth} - ${formatMoney(invoice.amount)}`
+    })),
+    ...expiringSubscriptions.slice(0, 3).map((pressing) => ({
+      id: `trial-${pressing.id}`,
+      title: pressing.name,
+      detail: `Souscription a verifier avant le ${formatDateOnly(pressing.trialEndsAt)}`
+    })),
+    ...suspendedPressings.slice(0, 3).map((pressing) => ({
+      id: `suspended-${pressing.id}`,
+      title: pressing.name,
+      detail: "Compte suspendu"
+    }))
+  ];
+
+  return (
+    <section className="report-section" aria-label="Alertes Super Admin">
+      <div className="section-heading">
+        <div>
+          <h2>Alertes</h2>
+          <p>Souscriptions, impayes et comptes a surveiller.</p>
+        </div>
+        <strong>{alerts.length}</strong>
+      </div>
+
+      <div className="role-count-grid">
+        {alerts.length === 0 ? (
+          <div className="empty-history">Aucune alerte prioritaire.</div>
+        ) : (
+          alerts.map((alert) => (
+            <article className="role-count-card" key={alert.id}>
+              <span>{alert.title}</span>
+              <strong>{alert.detail}</strong>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PlatformPressingsManager({
+  loading,
+  onCreatePressing,
+  onSelectPressing,
+  onUpdatePressingSubscription,
+  platformUsers,
+  pressingRows
+}) {
+  const [newPressing, setNewPressing] = useState({
+    name: "",
+    ownerEmail: "",
+    contact: "",
+    planName: "Starter"
+  });
+  const [creationStatus, setCreationStatus] = useState({ type: "", message: "" });
+  const [isCreating, setIsCreating] = useState(false);
+
+  async function submitPressing(event) {
+    event.preventDefault();
+    setCreationStatus({ type: "", message: "" });
+
+    if (newPressing.name.trim().length < 2) {
+      setCreationStatus({ type: "error", message: "Saisissez le nom du pressing." });
+      return;
+    }
+
+    setIsCreating(true);
+    const result = await onCreatePressing(newPressing);
+    setIsCreating(false);
+
+    if (!result.ok) {
+      setCreationStatus({ type: "error", message: result.message });
+      return;
+    }
+
+    setNewPressing({ name: "", ownerEmail: "", contact: "", planName: "Starter" });
+    setCreationStatus({ type: "success", message: "Pressing ajoute." });
+  }
+
+  return (
+    <div className="workspace-stack">
+      <section className="report-section" aria-label="Ajouter un pressing">
+        <div className="section-heading">
+          <div>
+            <h2>Ajouter un pressing</h2>
+            <p>Creation commerciale d'un nouvel etablissement client.</p>
+          </div>
+        </div>
+
+        <form className="platform-form" onSubmit={submitPressing}>
+          <label>
+            Nom du pressing
+            <input
+              value={newPressing.name}
+              onChange={(event) =>
+                setNewPressing((current) => ({ ...current, name: event.target.value }))
+              }
+              placeholder="Ex: Pressing Riviera"
+            />
+          </label>
+          <label>
+            Email proprietaire
+            <input
+              type="email"
+              value={newPressing.ownerEmail}
+              onChange={(event) =>
+                setNewPressing((current) => ({ ...current, ownerEmail: event.target.value }))
+              }
+              placeholder="admin@pressing.com"
+            />
+          </label>
+          <label>
+            Contact
+            <input
+              value={newPressing.contact}
+              onChange={(event) =>
+                setNewPressing((current) => ({ ...current, contact: event.target.value }))
+              }
+              placeholder="Telephone ou email"
+            />
+          </label>
+          <label>
+            Plan
+            <select
+              value={newPressing.planName}
+              onChange={(event) =>
+                setNewPressing((current) => ({ ...current, planName: event.target.value }))
+              }
+            >
+              <option value="Starter">Starter</option>
+              <option value="Pro">Pro</option>
+              <option value="Premium">Premium</option>
+            </select>
+          </label>
+          <button type="submit" disabled={isCreating}>
+            {isCreating ? "Creation..." : "Creer"}
+          </button>
+          {creationStatus.message && (
+            <div className={`password-status ${creationStatus.type}`}>{creationStatus.message}</div>
+          )}
+        </form>
+      </section>
+
+      <PlatformPressingsTable
+        loading={loading}
+        onSelectPressing={onSelectPressing}
+        onUpdatePressingSubscription={onUpdatePressingSubscription}
+        pressingRows={pressingRows}
+      />
+
+      <PlatformUsersTable loading={loading} platformUsers={platformUsers} />
+    </div>
+  );
+}
+
+function PlatformPressingsTable({
+  loading,
+  onSelectPressing,
+  onUpdatePressingSubscription,
+  pressingRows
+}) {
   return (
     <section className="report-section" aria-label="Liste des pressings">
       <div className="section-heading">
@@ -1092,6 +1355,7 @@ function PlatformPressingsTable({ loading, pressingRows }) {
           <span>En cours</span>
           <span>Dernier depot</span>
           <span>Total</span>
+          <span>Actions</span>
         </div>
 
         {loading ? (
@@ -1112,6 +1376,22 @@ function PlatformPressingsTable({ loading, pressingRows }) {
               <span>{pressing.processingTickets}</span>
               <span>{formatDateTime(pressing.lastTicket)}</span>
               <strong>{formatMoney(pressing.totalRevenue)}</strong>
+              <div className="platform-actions">
+                <button type="button" onClick={() => onSelectPressing(pressing)}>
+                  Fiche
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdatePressingSubscription(
+                      pressing.id,
+                      pressing.subscriptionStatus === "active" ? "suspended" : "active"
+                    )
+                  }
+                >
+                  {pressing.subscriptionStatus === "active" ? "Suspendre" : "Activer"}
+                </button>
+              </div>
             </article>
           ))
         )}
@@ -1162,6 +1442,29 @@ function PlatformBillingView({
           <span>Montant du</span>
           <strong>{formatMoney(unpaidAmount)}</strong>
         </article>
+      </section>
+
+      <section className="report-section" aria-label="Plans et tarifs">
+        <div className="section-heading">
+          <div>
+            <h2>Plans / Tarifs</h2>
+            <p>Offres commerciales selon volume et accompagnement.</p>
+          </div>
+          <strong>3</strong>
+        </div>
+        <div className="role-count-grid">
+          {[
+            { name: "Starter", price: 10000, limit: "Petit volume" },
+            { name: "Pro", price: 25000, limit: "Pressing actif" },
+            { name: "Premium", price: 50000, limit: "Multi-equipe" }
+          ].map((plan) => (
+            <article className="role-count-card" key={plan.name}>
+              <span>{plan.name}</span>
+              <strong>{formatMoney(plan.price)}</strong>
+              <small>{plan.limit}</small>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="report-section" aria-label="Gestion des abonnements">
@@ -1263,6 +1566,37 @@ function PlatformBillingView({
           )}
         </div>
       </section>
+
+      <section className="report-section" aria-label="Rappels et relances">
+        <div className="section-heading">
+          <div>
+            <h2>Rappels & Relances</h2>
+            <p>SMS et emails pour les renouvellements d'abonnement.</p>
+          </div>
+          <strong>{unpaidInvoices.length}</strong>
+        </div>
+        <div className="client-list">
+          {unpaidInvoices.length === 0 ? (
+            <div className="empty-history">Aucune relance a envoyer.</div>
+          ) : (
+            unpaidInvoices.map((invoice) => (
+              <article className="client-item" key={`reminder-${invoice.id}`}>
+                <div>
+                  <strong>{invoice.pressingName || invoice.pressingId}</strong>
+                  <span>{invoice.periodMonth}</span>
+                </div>
+                <div>
+                  <span>Echeance: {formatDateOnly(invoice.dueDate)}</span>
+                  <span>{INVOICE_STATUS_LABELS[invoice.status] || invoice.status}</span>
+                </div>
+                <button className="back-button compact-button" type="button">
+                  Relancer
+                </button>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
     </div>
   );
 }
@@ -1304,6 +1638,336 @@ function PlatformUsersTable({ loading, platformUsers }) {
         )}
       </div>
     </section>
+  );
+}
+
+function PlatformPressingDetailModal({ onClose, onUpdatePressingSubscription, pressing, users }) {
+  if (!pressing) {
+    return null;
+  }
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="pickup-modal">
+        <div className="modal-title-row">
+          <div>
+            <p className="eyebrow">Fiche pressing</p>
+            <h2>{pressing.name}</h2>
+          </div>
+          <button type="button" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+
+        <div className="pickup-summary">
+          <div>
+            <span>Proprietaire</span>
+            <strong>{pressing.ownerEmail || "-"}</strong>
+          </div>
+          <div>
+            <span>Employes</span>
+            <strong>{users.length}</strong>
+          </div>
+          <div>
+            <span>Statut</span>
+            <strong>{SUBSCRIPTION_STATUS_LABELS[pressing.subscriptionStatus]}</strong>
+          </div>
+          <div>
+            <span>Plan</span>
+            <strong>{pressing.planName}</strong>
+          </div>
+        </div>
+
+        <div className="client-detail-list">
+          <article className="client-detail-ticket">
+            <div className="client-detail-ticket-top">
+              <div>
+                <strong>Assistance technique</strong>
+                <span>Prise de controle encadree du compte pressing.</span>
+              </div>
+              <button className="back-button compact-button" type="button">
+                Preparer l'assistance
+              </button>
+            </div>
+          </article>
+          {users.map((user) => (
+            <article className="client-detail-ticket" key={user.id}>
+              <div className="client-detail-ticket-top">
+                <div>
+                  <strong>{user.email}</strong>
+                  <span>{ROLE_LABELS[user.role] || user.role}</span>
+                </div>
+                <span>{formatDateTime(user.lastSignInAt)}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <div className="modal-actions">
+          <button className="back-button" type="button" onClick={onClose}>
+            Fermer
+          </button>
+          <button
+            className="add-button"
+            type="button"
+            onClick={() =>
+              onUpdatePressingSubscription(
+                pressing.id,
+                pressing.subscriptionStatus === "active" ? "suspended" : "active"
+              )
+            }
+          >
+            {pressing.subscriptionStatus === "active" ? "Suspendre" : "Activer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlatformAnalyticsView({
+  historyLoading,
+  monthlyInvoiceRows,
+  onSelectOrder,
+  orderHistory,
+  utilizationRows
+}) {
+  const maxRevenue = Math.max(1, ...monthlyInvoiceRows.map((row) => row.amount));
+
+  return (
+    <div className="workspace-stack">
+      <section className="report-section" aria-label="Taux d'utilisation">
+        <div className="section-heading">
+          <div>
+            <h2>Taux d'utilisation</h2>
+            <p>Pressings les plus actifs et signaux d'abandon.</p>
+          </div>
+          <strong>{utilizationRows.length}</strong>
+        </div>
+
+        <div className="client-list">
+          {utilizationRows.length === 0 ? (
+            <div className="empty-history">Aucune activite a analyser.</div>
+          ) : (
+            utilizationRows.map((pressing) => (
+              <article className="client-item" key={pressing.id}>
+                <div>
+                  <strong>{pressing.name}</strong>
+                  <span>{pressing.usageStatus}</span>
+                </div>
+                <div>
+                  <span>Dernier depot: {formatDateTime(pressing.lastTicket)}</span>
+                  <span>{pressing.processingTickets} ticket(s) en cours</span>
+                </div>
+                <strong>{pressing.tickets} tickets</strong>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="report-section" aria-label="Rapports financiers">
+        <div className="section-heading">
+          <div>
+            <h2>Rapports financiers</h2>
+            <p>Evolution des revenus logiciel par mois.</p>
+          </div>
+          <strong>{monthlyInvoiceRows.length}</strong>
+        </div>
+        <div className="client-chart">
+          {monthlyInvoiceRows.length === 0 ? (
+            <div className="empty-history">Aucun paiement confirme.</div>
+          ) : (
+            monthlyInvoiceRows.map((row) => (
+              <div className="client-bar-row" key={row.month}>
+                <div>
+                  <strong>{row.month}</strong>
+                  <small>{formatMoney(row.amount)}</small>
+                </div>
+                <span>
+                  <i style={{ width: `${Math.max(8, (row.amount / maxRevenue) * 100)}%` }} />
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      <TicketsReport
+        historyLoading={historyLoading}
+        onSelectOrder={onSelectOrder}
+        orderHistory={orderHistory}
+        title="Commandes du reseau"
+      />
+    </div>
+  );
+}
+
+function PlatformCommunicationView({ platformPressings }) {
+  return (
+    <div className="workspace-stack">
+      <section className="report-section" aria-label="Annonces plateforme">
+        <div className="section-heading">
+          <div>
+            <h2>Annonces / Pop-ups</h2>
+            <p>Messages globaux envoyes aux pressings.</p>
+          </div>
+          <strong>{platformPressings.length}</strong>
+        </div>
+        <form className="platform-form platform-form-wide">
+          <label>
+            Titre
+            <input placeholder="Maintenance prevue ce soir a 23h" />
+          </label>
+          <label>
+            Audience
+            <select defaultValue="all">
+              <option value="all">Tous les pressings</option>
+              <option value="active">Pressings actifs</option>
+              <option value="trial">Essais</option>
+            </select>
+          </label>
+          <label className="wide-field">
+            Message
+            <textarea placeholder="Votre message aux clients SaaS" />
+          </label>
+          <button type="button">Planifier l'annonce</button>
+        </form>
+      </section>
+
+      <section className="report-section" aria-label="Historique notifications">
+        <div className="section-heading">
+          <div>
+            <h2>SMS & Emails systeme</h2>
+            <p>Historique des notifications envoyees par la plateforme.</p>
+          </div>
+          <strong>0</strong>
+        </div>
+        <div className="empty-history">Aucune notification systeme enregistree.</div>
+      </section>
+    </div>
+  );
+}
+
+function PlatformSupportView() {
+  return (
+    <div className="workspace-stack">
+      <section className="report-section" aria-label="Tickets support">
+        <div className="section-heading">
+          <div>
+            <h2>Tickets de support</h2>
+            <p>Demandes d'aide et bugs signales par les pressings.</p>
+          </div>
+          <strong>0</strong>
+        </div>
+        <div className="report-table">
+          <div className="support-row report-row-head">
+            <span>Pressing</span>
+            <span>Sujet</span>
+            <span>Priorite</span>
+            <span>Statut</span>
+            <span>Date</span>
+          </div>
+          <div className="empty-history">Aucun ticket support ouvert.</div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PlatformSystemSettingsView({ pressingName, role, userEmail }) {
+  const paymentModes = ["Wave", "Orange Money", "MTN", "Moov", "Stripe", "Especes"];
+
+  return (
+    <div className="workspace-stack">
+      <SettingsView pressingName={pressingName} role={role} userEmail={userEmail} />
+
+      <section className="report-section" aria-label="Roles et permissions">
+        <div className="section-heading">
+          <div>
+            <h2>Roles & permissions</h2>
+            <p>Perimetre des profils de gestion plateforme.</p>
+          </div>
+        </div>
+        <div className="role-count-grid">
+          {["Super Admin", "Moderateur", "Support technique"].map((profile) => (
+            <article className="role-count-card" key={profile}>
+              <span>{profile}</span>
+              <strong>{profile === "Super Admin" ? "Complet" : "Limite"}</strong>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="report-section" aria-label="Modes de paiement">
+        <div className="section-heading">
+          <div>
+            <h2>Modes de paiement</h2>
+            <p>Passerelles acceptees pour les abonnements.</p>
+          </div>
+          <strong>{paymentModes.length}</strong>
+        </div>
+        <div className="role-count-grid">
+          {paymentModes.map((mode) => (
+            <article className="role-count-card" key={mode}>
+              <span>{mode}</span>
+              <strong>Actif</strong>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="report-section" aria-label="Informations plateforme">
+        <div className="section-heading">
+          <div>
+            <h2>Informations plateforme</h2>
+            <p>Nom du logiciel, marque et documents publics.</p>
+          </div>
+        </div>
+        <form className="platform-form">
+          <label>
+            Nom du logiciel
+            <input defaultValue="PressingTrack" />
+          </label>
+          <label>
+            URL CGU
+            <input placeholder="https://..." />
+          </label>
+          <label>
+            Politique confidentialite
+            <input placeholder="https://..." />
+          </label>
+          <button type="button">Enregistrer</button>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function PlatformSecurityLogsView({ platformUsers }) {
+  return (
+    <div className="workspace-stack">
+      <section className="report-section" aria-label="Journal d'activite">
+        <div className="section-heading">
+          <div>
+            <h2>Journal des actions</h2>
+            <p>Operations sensibles realisees sur la plateforme.</p>
+          </div>
+          <strong>0</strong>
+        </div>
+        <div className="report-table">
+          <div className="activity-row report-row-head">
+            <span>Utilisateur</span>
+            <span>Action</span>
+            <span>Cible</span>
+            <span>Date</span>
+          </div>
+          <div className="empty-history">Aucune action sensible enregistree.</div>
+        </div>
+      </section>
+
+      <PlatformUsersTable loading={false} platformUsers={platformUsers} />
+    </div>
   );
 }
 
@@ -2248,6 +2912,47 @@ function App() {
     setDatabaseError("");
   }
 
+  async function createPlatformPressing({ name, ownerEmail, contact, planName }) {
+    const planFees = {
+      Starter: 10000,
+      Pro: 25000,
+      Premium: 50000
+    };
+    const row = {
+      name: name.trim(),
+      owner_email: ownerEmail.trim() || null,
+      billing_email: ownerEmail.trim() || contact.trim() || null,
+      plan_name: planName,
+      monthly_fee: planFees[planName] || 0,
+      subscription_status: "trial",
+      subscription_started_at: new Date().toISOString(),
+      trial_ends_at: new Date(Date.now() + 14 * 86400000).toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    if (!isSupabaseConfigured || !isPlatformAdmin) {
+      const localPressing = fromDatabasePressing({
+        ...row,
+        id: crypto.randomUUID(),
+        ticket_counter: 103,
+        created_at: new Date().toISOString()
+      });
+      setPlatformPressings((current) => [localPressing, ...current]);
+      return { ok: true };
+    }
+
+    const { data, error } = await supabase.from("pressings").insert(row).select("*").single();
+
+    if (error) {
+      setDatabaseError("Creation du pressing echouee dans Supabase.");
+      return { ok: false, message: "Creation impossible dans Supabase." };
+    }
+
+    setPlatformPressings((current) => [fromDatabasePressing(data), ...current]);
+    setDatabaseError("");
+    return { ok: true };
+  }
+
   function resetArticleModal() {
     setSelectedWashOption(DEFAULT_PRICE_OPTION_ID);
     setSelectedReserves([]);
@@ -2789,6 +3494,7 @@ function App() {
       <PlatformDashboard
         databaseError={databaseError}
         historyLoading={historyLoading}
+        onCreatePressing={createPlatformPressing}
         onLogout={logoutAdmin}
         onUpdateInvoiceStatus={updateInvoiceStatus}
         onUpdatePressingSubscription={updatePressingSubscription}
