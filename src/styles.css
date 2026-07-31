@@ -1670,6 +1670,10 @@ h2 {
   padding: 20px;
 }
 
+.workspace-main > * {
+  min-width: 0;
+}
+
 .workspace-main > .pos-shell {
   min-height: auto;
   padding: 0;
@@ -1927,6 +1931,7 @@ h2 {
 .report-card {
   display: grid;
   gap: 10px;
+  min-width: 0;
   min-height: 126px;
   border: 2px solid var(--line);
   border-radius: 8px;
@@ -1936,6 +1941,7 @@ h2 {
 }
 
 .report-card span {
+  min-width: 0;
   color: var(--muted);
   font-size: 1rem;
   font-weight: 1000;
@@ -1943,9 +1949,11 @@ h2 {
 }
 
 .report-card strong {
+  min-width: 0;
   color: var(--ink);
   font-size: clamp(1.85rem, 3vw, 3rem);
   line-height: 1;
+  overflow-wrap: anywhere;
 }
 
 .report-card.wide strong {
@@ -2178,6 +2186,11 @@ h2 {
   display: grid;
   gap: 14px;
   min-width: 0;
+  overflow-x: hidden;
+}
+
+.report-section > * {
+  min-width: 0;
 }
 
 .report-section .section-heading strong {
@@ -2201,6 +2214,7 @@ h2 {
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
   scrollbar-color: var(--ink) #e5e7eb;
   scrollbar-width: thin;
 }
@@ -2794,6 +2808,10 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  .report-row {
+    min-width: 760px;
+  }
+
   .client-item {
     grid-template-columns: 1fr;
   }
@@ -2932,6 +2950,8 @@ h2 {
   .ticket-panel,
   .reserve-modal,
   .pickup-modal {
+    width: 100%;
+    max-width: 100%;
     padding: 14px;
   }
 
@@ -2985,6 +3005,44 @@ h2 {
   .stock-tabs,
   .stock-item,
   .pickup-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .report-table {
+    overflow-x: visible;
+  }
+
+  .report-row,
+  .platform-pressing-row,
+  .platform-user-row,
+  .billing-subscription-row,
+  .billing-invoice-row,
+  .support-row,
+  .activity-row {
+    grid-template-columns: 1fr;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .report-row-head,
+  .platform-pressing-row.report-row-head,
+  .platform-user-row.report-row-head,
+  .billing-subscription-row.report-row-head,
+  .billing-invoice-row.report-row-head,
+  .support-row.report-row-head,
+  .activity-row.report-row-head {
+    display: none;
+  }
+
+  .report-row-button,
+  .platform-row {
+    gap: 10px;
+    border: 2px solid var(--line);
+    background: var(--surface-soft);
+    padding: 14px;
+  }
+
+  .platform-actions {
     grid-template-columns: 1fr;
   }
 
@@ -3042,6 +3100,15 @@ h2 {
   .status-chart,
   .stock-alert-grid {
     grid-template-columns: 1fr;
+  }
+
+  .bar-chart {
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .bar-column small {
+    font-size: 0.78rem;
   }
 
   .donut-chart {
