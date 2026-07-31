@@ -2236,6 +2236,7 @@ h2 {
   display: grid;
   gap: 12px;
   align-items: center;
+  width: 100%;
   min-width: 1040px;
   border-radius: 8px;
   padding: 12px;
@@ -2261,6 +2262,7 @@ h2 {
   display: grid;
   grid-template-columns: 1fr 1.3fr 0.7fr 0.7fr 0.9fr;
   gap: 12px;
+  width: 100%;
   min-width: 880px;
   border-radius: 8px;
   padding: 12px;
@@ -2270,6 +2272,7 @@ h2 {
   display: grid;
   grid-template-columns: 1fr 1.4fr 1fr 0.9fr;
   gap: 12px;
+  width: 100%;
   min-width: 760px;
   border-radius: 8px;
   padding: 12px;
@@ -2314,6 +2317,10 @@ h2 {
 .platform-row select:focus {
   border-color: var(--blue);
   box-shadow: 0 0 0 4px rgba(21, 94, 239, 0.12);
+}
+
+.platform-row > * {
+  min-width: 0;
 }
 
 .platform-actions {
@@ -2649,6 +2656,37 @@ h2 {
   font-size: 1.15rem;
 }
 
+@media (max-width: 1180px) {
+  .workspace-shell {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .workspace-sidebar {
+    padding: 16px;
+  }
+
+  .workspace-nav-item {
+    font-size: 0.98rem;
+    padding: 9px 10px;
+  }
+
+  .report-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .platform-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .platform-form-wide {
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 0.45fr);
+  }
+
+  .platform-form button {
+    justify-self: stretch;
+  }
+}
+
 @media (max-width: 980px) {
   body {
     overflow: auto;
@@ -2664,9 +2702,12 @@ h2 {
     z-index: 4;
     height: auto;
     min-height: auto;
+    max-height: 42vh;
     border-right: 0;
     border-bottom: 2px solid var(--line);
-    overflow-y: visible;
+    gap: 14px;
+    overflow-y: auto;
+    padding: 14px;
   }
 
   .workspace-sidebar h1 {
@@ -2678,7 +2719,9 @@ h2 {
     flex: 0 0 auto;
     gap: 8px;
     overflow-x: auto;
+    overflow-y: hidden;
     padding-bottom: 4px;
+    scrollbar-width: thin;
   }
 
   .workspace-nav-item {
@@ -2691,12 +2734,14 @@ h2 {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 10px;
     margin-top: 0;
   }
 
   .workspace-main {
     max-height: none;
     overflow-y: visible;
+    padding: 14px;
   }
 
   .pos-shell {
@@ -2728,12 +2773,106 @@ h2 {
   .dashboard-charts {
     grid-template-columns: 1fr;
   }
+
+  .platform-pressing-row,
+  .platform-user-row,
+  .billing-subscription-row,
+  .billing-invoice-row {
+    min-width: 900px;
+  }
+
+  .support-row,
+  .activity-row {
+    min-width: 760px;
+  }
+}
+
+@media (max-width: 760px) {
+  .report-section {
+    padding: 16px;
+  }
+
+  .report-table {
+    overflow-x: visible;
+  }
+
+  .platform-pressing-row,
+  .platform-user-row,
+  .billing-subscription-row,
+  .billing-invoice-row,
+  .support-row,
+  .activity-row {
+    grid-template-columns: 1fr;
+    min-width: 0;
+  }
+
+  .platform-row {
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .platform-row > span,
+  .platform-row > strong,
+  .platform-row > select {
+    width: 100%;
+  }
+
+  .platform-row > span,
+  .platform-row > strong {
+    display: block;
+  }
+
+  .platform-pressing-row.report-row-head,
+  .platform-user-row.report-row-head,
+  .billing-subscription-row.report-row-head,
+  .billing-invoice-row.report-row-head,
+  .support-row.report-row-head,
+  .activity-row.report-row-head {
+    display: none;
+  }
+
+  .platform-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .role-count-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .role-count-card strong {
+    font-size: 1.35rem;
+  }
+
+  .platform-form,
+  .platform-form-wide {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-form .wide-field,
+  .platform-form .password-status {
+    grid-column: auto;
+  }
 }
 
 @media (max-width: 620px) {
   .pos-shell {
     gap: 12px;
     padding: 10px;
+  }
+
+  .workspace-sidebar {
+    max-height: 50vh;
+  }
+
+  .workspace-account {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workspace-account .operator-badge,
+  .workspace-account .logout-button {
+    width: 100%;
+    text-align: center;
   }
 
   .selection-panel,
@@ -2828,6 +2967,16 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  .report-card {
+    min-height: 104px;
+    padding: 14px;
+  }
+
+  .report-card strong,
+  .report-card.wide strong {
+    font-size: 1.75rem;
+  }
+
   .line-actions {
     justify-items: stretch;
   }
@@ -2848,6 +2997,30 @@ h2 {
 }
 
 @media (max-width: 430px) {
+  .workspace-main {
+    padding: 10px;
+  }
+
+  .workspace-sidebar h1 {
+    font-size: 1.45rem;
+  }
+
+  .workspace-nav-item {
+    min-height: 44px;
+    font-size: 0.92rem;
+    padding: 8px 10px;
+  }
+
+  .role-count-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-form,
+  .password-settings,
+  .article-create-form {
+    padding: 12px;
+  }
+
   .article-grid {
     grid-template-columns: 1fr;
   }
