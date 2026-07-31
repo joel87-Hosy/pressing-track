@@ -294,8 +294,11 @@ drop policy if exists "Tenant pressing read" on pressings;
 drop policy if exists "Platform pressing write" on pressings;
 drop policy if exists "Platform invoice management" on pressing_invoices;
 drop policy if exists "Platform plan management" on platform_plans;
+drop policy if exists "Platform announcement read" on platform_announcements;
 drop policy if exists "Platform announcement management" on platform_announcements;
 drop policy if exists "Platform notification management" on platform_notifications;
+drop policy if exists "Tenant support read" on platform_support_tickets;
+drop policy if exists "Tenant support insert" on platform_support_tickets;
 drop policy if exists "Platform support management" on platform_support_tickets;
 drop policy if exists "Platform activity log management" on platform_activity_logs;
 
@@ -359,6 +362,11 @@ to authenticated
 using (public.is_platform_admin())
 with check (public.is_platform_admin());
 
+create policy "Platform announcement read"
+on platform_announcements for select
+to authenticated
+using (public.is_platform_admin() or status = 'published');
+
 create policy "Platform announcement management"
 on platform_announcements for all
 to authenticated
@@ -370,6 +378,16 @@ on platform_notifications for all
 to authenticated
 using (public.is_platform_admin())
 with check (public.is_platform_admin());
+
+create policy "Tenant support read"
+on platform_support_tickets for select
+to authenticated
+using (public.is_platform_admin() or pressing_id = public.current_pressing_id());
+
+create policy "Tenant support insert"
+on platform_support_tickets for insert
+to authenticated
+with check (pressing_id = public.current_pressing_id());
 
 create policy "Platform support management"
 on platform_support_tickets for all

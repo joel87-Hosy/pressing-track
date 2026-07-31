@@ -617,6 +617,31 @@ function fromDatabaseInvoice(row) {
   };
 }
 
+function fromDatabaseAnnouncement(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    message: row.message,
+    audience: row.audience || "all",
+    status: row.status || "draft",
+    scheduledAt: row.scheduled_at,
+    createdAt: row.created_at
+  };
+}
+
+function fromDatabaseSupportTicket(row) {
+  return {
+    id: row.id,
+    pressingId: row.pressing_id,
+    pressingName: row.pressings?.name || "",
+    subject: row.subject,
+    priority: row.priority || "normal",
+    status: row.status || "open",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
 function fromDatabasePlatformUser(row) {
   return {
     id: row.id,
@@ -990,13 +1015,17 @@ function PlatformDashboard({
   databaseError,
   historyLoading,
   onCreatePressing,
+  onCreatePlatformAnnouncement,
   onLogout,
   orderHistory,
   onUpdateInvoiceStatus,
   onUpdatePressingSubscription,
+  onUpdateSupportTicketStatus,
+  platformAnnouncements,
   platformInvoices,
   platformLoading,
   platformPressings,
+  platformSupportTickets,
   platformUsers,
   pressingName,
   role,
@@ -1143,11 +1172,18 @@ function PlatformDashboard({
       )}
 
       {activeView === "communication" && (
-        <PlatformCommunicationView platformPressings={platformPressings} />
+        <PlatformCommunicationView
+          onCreatePlatformAnnouncement={onCreatePlatformAnnouncement}
+          platformAnnouncements={platformAnnouncements}
+          platformPressings={platformPressings}
+        />
       )}
 
       {activeView === "support" && (
-        <PlatformSupportView />
+        <PlatformSupportView
+          onUpdateSupportTicketStatus={onUpdateSupportTicketStatus}
+          platformSupportTickets={platformSupportTickets}
+        />
       )}
 
       {activeView === "settings" && (
@@ -1803,7 +1839,41 @@ function PlatformAnalyticsView({
   );
 }
 
-function PlatformCommunicationView({ platformPressings }) {
+function PlatformCommunicationView({
+  onCreatePlatformAnnouncement,
+  platformAnnouncements,
+  platformPressings
+}) {
+  const [announcementForm, setAnnouncementForm] = useState({
+    title: "",
+    audience: "all",
+    message: ""
+  });
+  const [announcementStatus, setAnnouncementStatus] = useState({ type: "", message: "" });
+  const [isPublishing, setIsPublishing] = useState(false);
+
+  async function submitAnnouncement(event) {
+    event.preventDefault();
+    setAnnouncementStatus({ type: "", message: "" });
+
+    if (announcementForm.title.trim().length < 3 || announcementForm.message.trim().length < 5) {
+      setAnnouncementStatus({ type: "error", message: "Saisissez un titre et un message." });
+      return;
+    }
+
+    setIsPublishing(true);
+    const result = await onCreatePlatformAnnouncement(announcementForm);
+    setIsPublishing(false);
+
+    if (!result.ok) {
+      setAnnouncementStatus({ type: "error", message: result.message });
+      return;
+    }
+
+    setAnnouncementForm({ title: "", audience: "all", message: "" });
+    setAnnouncementStatus({ type: "success", message: "Annonce publiee aux comptes pressing." });
+  }
+
   return (
     <div className="workspace-stack">
       <section className="report-section" aria-label="Annonces plateforme">
@@ -1814,14 +1884,25 @@ function PlatformCommunicationView({ platformPressings }) {
           </div>
           <strong>{platformPressings.length}</strong>
         </div>
-        <form className="platform-form platform-form-wide">
+        <form className="platform-form platform-form-wide" onSubmit={submitAnnouncement}>
           <label>
             Titre
-            <input placeholder="Maintenance prevue ce soir a 23h" />
+            <input
+              value={announcementForm.title}
+              onChange={(event) =>
+                setAnnouncementForm((current) => ({ ...current, title: event.target.value }))
+              }
+              placeholder="Maintenance prevue ce soir a 23h"
+            />
           </label>
           <label>
             Audience
-            <select defaultValue="all">
+            <select
+              value={announcementForm.audience}
+              onChange={(event) =>
+                setAnnouncementForm((current) => ({ ...current, audience: event.target.value }))
+              }
+            >
               <option value="all">Tous les pressings</option>
               <option value="active">Pressings actifs</option>
               <option value="trial">Essais</option>
@@ -1829,9 +1910,22 @@ function PlatformCommunicationView({ platformPressings }) {
           </label>
           <label className="wide-field">
             Message
-            <textarea placeholder="Votre message aux clients SaaS" />
+            <textarea
+              value={announcementForm.message}
+              onChange={(event) =>
+                setAnnouncementForm((current) => ({ ...current, message: event.target.value }))
+              }
+              placeholder="Votre message aux clients SaaS"
+            />
           </label>
-          <button type="button">Planifier l'annonce</button>
+          <button type="submit" disabled={isPublishing}>
+            {isPublishing ? "Publication..." : "Publier"}
+          </button>
+          {announcementStatus.message && (
+            <div className={`password-status ${announcementStatus.type}`}>
+              {announcementStatus.message}
+            </div>
+          )}
         </form>
       </section>
 
@@ -1841,15 +1935,33 @@ function PlatformCommunicationView({ platformPressings }) {
             <h2>SMS & Emails systeme</h2>
             <p>Historique des notifications envoyees par la plateforme.</p>
           </div>
-          <strong>0</strong>
+          <strong>{platformAnnouncements.length}</strong>
         </div>
-        <div className="empty-history">Aucune notification systeme enregistree.</div>
+        <div className="client-list">
+          {platformAnnouncements.length === 0 ? (
+            <div className="empty-history">Aucune annonce publiee.</div>
+          ) : (
+            platformAnnouncements.map((announcement) => (
+              <article className="client-item" key={announcement.id}>
+                <div>
+                  <strong>{announcement.title}</strong>
+                  <span>{announcement.message}</span>
+                </div>
+                <div>
+                  <span>Audience: {announcement.audience}</span>
+                  <span>Statut: {announcement.status}</span>
+                </div>
+                <strong>{formatDateOnly(announcement.createdAt)}</strong>
+              </article>
+            ))
+          )}
+        </div>
       </section>
     </div>
   );
 }
 
-function PlatformSupportView() {
+function PlatformSupportView({ onUpdateSupportTicketStatus, platformSupportTickets }) {
   return (
     <div className="workspace-stack">
       <section className="report-section" aria-label="Tickets support">
@@ -1858,7 +1970,7 @@ function PlatformSupportView() {
             <h2>Tickets de support</h2>
             <p>Demandes d'aide et bugs signales par les pressings.</p>
           </div>
-          <strong>0</strong>
+          <strong>{platformSupportTickets.length}</strong>
         </div>
         <div className="report-table">
           <div className="support-row report-row-head">
@@ -1868,7 +1980,27 @@ function PlatformSupportView() {
             <span>Statut</span>
             <span>Date</span>
           </div>
-          <div className="empty-history">Aucun ticket support ouvert.</div>
+          {platformSupportTickets.length === 0 ? (
+            <div className="empty-history">Aucun ticket support ouvert.</div>
+          ) : (
+            platformSupportTickets.map((ticket) => (
+              <article className="support-row platform-row" key={ticket.id}>
+                <strong>{ticket.pressingName || ticket.pressingId}</strong>
+                <span>{ticket.subject}</span>
+                <span>{ticket.priority}</span>
+                <select
+                  value={ticket.status}
+                  onChange={(event) => onUpdateSupportTicketStatus(ticket.id, event.target.value)}
+                >
+                  <option value="open">Ouvert</option>
+                  <option value="in_progress">En cours</option>
+                  <option value="resolved">Resolu</option>
+                  <option value="closed">Ferme</option>
+                </select>
+                <span>{formatDateTime(ticket.createdAt)}</span>
+              </article>
+            ))
+          )}
         </div>
       </section>
     </div>
@@ -1880,7 +2012,12 @@ function PlatformSystemSettingsView({ pressingName, role, userEmail }) {
 
   return (
     <div className="workspace-stack">
-      <SettingsView pressingName={pressingName} role={role} userEmail={userEmail} />
+      <SettingsView
+        pressingName={pressingName}
+        role={role}
+        showTenantMessaging={false}
+        userEmail={userEmail}
+      />
 
       <section className="report-section" aria-label="Roles et permissions">
         <div className="section-heading">
@@ -2112,11 +2249,23 @@ function StockView({ orderHistory }) {
   );
 }
 
-function SettingsView({ pressingName, role, userEmail }) {
+function SettingsView({
+  onCreateSupportTicket,
+  pressingAnnouncements = [],
+  pressingName,
+  pressingSupportTickets = [],
+  role,
+  showTenantMessaging = true,
+  userEmail
+}) {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordStatus, setPasswordStatus] = useState({ type: "", message: "" });
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [supportSubject, setSupportSubject] = useState("");
+  const [supportPriority, setSupportPriority] = useState("normal");
+  const [supportStatus, setSupportStatus] = useState({ type: "", message: "" });
+  const [isCreatingSupportTicket, setIsCreatingSupportTicket] = useState(false);
 
   async function submitPasswordUpdate(event) {
     event.preventDefault();
@@ -2163,73 +2312,199 @@ function SettingsView({ pressingName, role, userEmail }) {
     setPasswordStatus({ type: "success", message: "Mot de passe mis a jour." });
   }
 
+  async function submitSupportTicket(event) {
+    event.preventDefault();
+    setSupportStatus({ type: "", message: "" });
+
+    if (!onCreateSupportTicket) {
+      setSupportStatus({ type: "error", message: "Support indisponible pour ce compte." });
+      return;
+    }
+
+    if (supportSubject.trim().length < 5) {
+      setSupportStatus({ type: "error", message: "Decrivez rapidement votre demande." });
+      return;
+    }
+
+    setIsCreatingSupportTicket(true);
+    const result = await onCreateSupportTicket({
+      subject: supportSubject,
+      priority: supportPriority
+    });
+    setIsCreatingSupportTicket(false);
+
+    if (!result.ok) {
+      setSupportStatus({ type: "error", message: result.message });
+      return;
+    }
+
+    setSupportSubject("");
+    setSupportPriority("normal");
+    setSupportStatus({ type: "success", message: "Demande envoyee au Super Admin." });
+  }
+
   return (
-    <section className="report-section" aria-label="Parametres">
-      <div className="section-heading">
-        <div>
-          <h2>Parametres</h2>
-          <p>Informations du compte connecte.</p>
-        </div>
-      </div>
-
-      <div className="settings-grid">
-        <article className="report-card">
-          <span>Pressing</span>
-          <strong>{pressingName}</strong>
-        </article>
-        <article className="report-card">
-          <span>Role</span>
-          <strong>{ROLE_LABELS[role] || role}</strong>
-        </article>
-      </div>
-
-      <form className="password-settings" onSubmit={submitPasswordUpdate}>
-        <div>
-          <h3>Mot de passe</h3>
-          <p>{userEmail || "Compte connecte"}</p>
+    <div className="workspace-stack">
+      <section className="report-section" aria-label="Parametres">
+        <div className="section-heading">
+          <div>
+            <h2>Parametres</h2>
+            <p>Informations du compte connecte.</p>
+          </div>
         </div>
 
-        <div className="password-fields">
-          <label htmlFor="new-password">
-            Nouveau mot de passe
-            <input
-              id="new-password"
-              autoComplete="new-password"
-              type="password"
-              value={newPassword}
-              onChange={(event) => {
-                setNewPassword(event.target.value);
-                setPasswordStatus({ type: "", message: "" });
-              }}
-              placeholder="Au moins 6 caracteres"
-            />
-          </label>
-
-          <label htmlFor="confirm-password">
-            Confirmer le mot de passe
-            <input
-              id="confirm-password"
-              autoComplete="new-password"
-              type="password"
-              value={confirmPassword}
-              onChange={(event) => {
-                setConfirmPassword(event.target.value);
-                setPasswordStatus({ type: "", message: "" });
-              }}
-              placeholder="Repeter le mot de passe"
-            />
-          </label>
+        <div className="settings-grid">
+          <article className="report-card">
+            <span>Pressing</span>
+            <strong>{pressingName}</strong>
+          </article>
+          <article className="report-card">
+            <span>Role</span>
+            <strong>{ROLE_LABELS[role] || role}</strong>
+          </article>
         </div>
 
-        {passwordStatus.message && (
-          <div className={`password-status ${passwordStatus.type}`}>{passwordStatus.message}</div>
-        )}
+        <form className="password-settings" onSubmit={submitPasswordUpdate}>
+          <div>
+            <h3>Mot de passe</h3>
+            <p>{userEmail || "Compte connecte"}</p>
+          </div>
 
-        <button type="submit" disabled={isUpdatingPassword}>
-          {isUpdatingPassword ? "Mise a jour..." : "Modifier le mot de passe"}
-        </button>
-      </form>
-    </section>
+          <div className="password-fields">
+            <label htmlFor="new-password">
+              Nouveau mot de passe
+              <input
+                id="new-password"
+                autoComplete="new-password"
+                type="password"
+                value={newPassword}
+                onChange={(event) => {
+                  setNewPassword(event.target.value);
+                  setPasswordStatus({ type: "", message: "" });
+                }}
+                placeholder="Au moins 6 caracteres"
+              />
+            </label>
+
+            <label htmlFor="confirm-password">
+              Confirmer le mot de passe
+              <input
+                id="confirm-password"
+                autoComplete="new-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(event) => {
+                  setConfirmPassword(event.target.value);
+                  setPasswordStatus({ type: "", message: "" });
+                }}
+                placeholder="Repeter le mot de passe"
+              />
+            </label>
+          </div>
+
+          {passwordStatus.message && (
+            <div className={`password-status ${passwordStatus.type}`}>{passwordStatus.message}</div>
+          )}
+
+          <button type="submit" disabled={isUpdatingPassword}>
+            {isUpdatingPassword ? "Mise a jour..." : "Modifier le mot de passe"}
+          </button>
+        </form>
+      </section>
+
+      {showTenantMessaging && (
+        <>
+          <section className="report-section" aria-label="Annonces plateforme">
+            <div className="section-heading">
+              <div>
+                <h2>Annonces plateforme</h2>
+                <p>Messages envoyes par le Super Admin.</p>
+              </div>
+              <strong>{pressingAnnouncements.length}</strong>
+            </div>
+
+            <div className="client-list">
+              {pressingAnnouncements.length === 0 ? (
+                <div className="empty-history">Aucune annonce pour le moment.</div>
+              ) : (
+                pressingAnnouncements.map((announcement) => (
+                  <article className="client-item" key={announcement.id}>
+                    <div>
+                      <strong>{announcement.title}</strong>
+                      <span>{announcement.message}</span>
+                    </div>
+                    <div>
+                      <span>Audience: {announcement.audience}</span>
+                      <span>{formatDateTime(announcement.createdAt)}</span>
+                    </div>
+                    <strong>{announcement.status}</strong>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="report-section" aria-label="Support plateforme">
+            <div className="section-heading">
+              <div>
+                <h2>Support</h2>
+                <p>Envoyez une demande au Super Admin.</p>
+              </div>
+              <strong>{pressingSupportTickets.length}</strong>
+            </div>
+
+            <form className="platform-form" onSubmit={submitSupportTicket}>
+              <label className="wide-field">
+                Sujet
+                <input
+                  value={supportSubject}
+                  onChange={(event) => setSupportSubject(event.target.value)}
+                  placeholder="Ex: Impossible de valider un retrait"
+                />
+              </label>
+              <label>
+                Priorite
+                <select
+                  value={supportPriority}
+                  onChange={(event) => setSupportPriority(event.target.value)}
+                >
+                  <option value="low">Basse</option>
+                  <option value="normal">Normale</option>
+                  <option value="high">Haute</option>
+                  <option value="urgent">Urgente</option>
+                </select>
+              </label>
+              <button type="submit" disabled={isCreatingSupportTicket}>
+                {isCreatingSupportTicket ? "Envoi..." : "Envoyer"}
+              </button>
+              {supportStatus.message && (
+                <div className={`password-status ${supportStatus.type}`}>{supportStatus.message}</div>
+              )}
+            </form>
+
+            <div className="client-list">
+              {pressingSupportTickets.length === 0 ? (
+                <div className="empty-history">Aucune demande support envoyee.</div>
+              ) : (
+                pressingSupportTickets.map((ticket) => (
+                  <article className="client-item" key={ticket.id}>
+                    <div>
+                      <strong>{ticket.subject}</strong>
+                      <span>Priorite: {ticket.priority}</span>
+                    </div>
+                    <div>
+                      <span>Statut: {ticket.status}</span>
+                      <span>{formatDateTime(ticket.createdAt)}</span>
+                    </div>
+                    <strong>{ticket.status}</strong>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -2410,11 +2685,14 @@ function TicketReadModal({ order, onClose }) {
 }
 
 function SupervisorDashboard({
+  onCreateSupportTicket,
   databaseError,
   historyLoading,
   onLogout,
   orderHistory,
+  pressingAnnouncements,
   pressingName,
+  pressingSupportTickets,
   role,
   selectedOrder,
   setSelectedOrder,
@@ -2460,7 +2738,14 @@ function SupervisorDashboard({
       {activeView === "clients" && <ClientsReport orderHistory={orderHistory} />}
 
       {activeView === "settings" && (
-        <SettingsView pressingName={pressingName} role={role} userEmail={userEmail} />
+        <SettingsView
+          onCreateSupportTicket={onCreateSupportTicket}
+          pressingAnnouncements={pressingAnnouncements}
+          pressingName={pressingName}
+          pressingSupportTickets={pressingSupportTickets}
+          role={role}
+          userEmail={userEmail}
+        />
       )}
 
       <TicketReadModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />
@@ -2583,6 +2868,10 @@ function App() {
   const [platformPressings, setPlatformPressings] = useState([]);
   const [platformUsers, setPlatformUsers] = useState([]);
   const [platformInvoices, setPlatformInvoices] = useState([]);
+  const [platformAnnouncements, setPlatformAnnouncements] = useState([]);
+  const [platformSupportTickets, setPlatformSupportTickets] = useState([]);
+  const [pressingAnnouncements, setPressingAnnouncements] = useState([]);
+  const [pressingSupportTickets, setPressingSupportTickets] = useState([]);
   const [platformLoading, setPlatformLoading] = useState(false);
   const [pickupQuery, setPickupQuery] = useState("");
   const [selectedPickupOrder, setSelectedPickupOrder] = useState(null);
@@ -2820,11 +3109,50 @@ function App() {
   }, [adminSession, currentPressingId, isAdmin]);
 
   useEffect(() => {
+    if (!isSupabaseConfigured || !adminSession || isPlatformAdmin || !currentPressingId) {
+      setPressingAnnouncements([]);
+      setPressingSupportTickets([]);
+      return;
+    }
+
+    async function loadPressingPlatformMessages() {
+      const [
+        { data: announcementsData, error: announcementsError },
+        { data: supportTicketsData, error: supportTicketsError }
+      ] = await Promise.all([
+        supabase
+          .from("platform_announcements")
+          .select("*")
+          .eq("status", "published")
+          .in("audience", ["all", "active", "trial"])
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("platform_support_tickets")
+          .select("*")
+          .eq("pressing_id", currentPressingId)
+          .order("created_at", { ascending: false })
+      ]);
+
+      if (announcementsError || supportTicketsError) {
+        setDatabaseError("Lecture messagerie/support impossible dans Supabase.");
+        return;
+      }
+
+      setPressingAnnouncements(announcementsData.map(fromDatabaseAnnouncement));
+      setPressingSupportTickets(supportTicketsData.map(fromDatabaseSupportTicket));
+    }
+
+    loadPressingPlatformMessages();
+  }, [adminSession, currentPressingId, isPlatformAdmin]);
+
+  useEffect(() => {
     if (!isSupabaseConfigured || !adminSession || !isPlatformAdmin) {
       setPlatformLoading(false);
       setPlatformPressings([]);
       setPlatformUsers([]);
       setPlatformInvoices([]);
+      setPlatformAnnouncements([]);
+      setPlatformSupportTickets([]);
       return;
     }
 
@@ -2835,19 +3163,35 @@ function App() {
       const [
         { data: pressingsData, error: pressingsError },
         { data: usersData, error: usersError },
-        { data: invoicesData, error: invoicesError }
+        { data: invoicesData, error: invoicesError },
+        { data: announcementsData, error: announcementsError },
+        { data: supportTicketsData, error: supportTicketsError }
       ] = await Promise.all([
           supabase.from("pressings").select("*").order("created_at", { ascending: false }),
           supabase.from("platform_user_accounts").select("*").order("created_at", { ascending: false }),
           supabase
             .from("pressing_invoices")
             .select("*, pressings(name)")
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("platform_announcements")
+            .select("*")
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("platform_support_tickets")
+            .select("*, pressings(name)")
             .order("created_at", { ascending: false })
         ]);
 
-      if (pressingsError || usersError || invoicesError) {
+      if (
+        pressingsError ||
+        usersError ||
+        invoicesError ||
+        announcementsError ||
+        supportTicketsError
+      ) {
         setDatabaseError(
-          "Lecture plateforme incomplete. Executez la mise a jour SQL pour activer utilisateurs, abonnements et factures."
+          "Lecture plateforme incomplete. Executez la mise a jour SQL pour activer utilisateurs, abonnements, messagerie et support."
         );
         setPlatformLoading(false);
         return;
@@ -2856,6 +3200,8 @@ function App() {
       setPlatformPressings(pressingsData.map(fromDatabasePressing));
       setPlatformUsers(usersData.map(fromDatabasePlatformUser));
       setPlatformInvoices(invoicesData.map(fromDatabaseInvoice));
+      setPlatformAnnouncements(announcementsData.map(fromDatabaseAnnouncement));
+      setPlatformSupportTickets(supportTicketsData.map(fromDatabaseSupportTicket));
       setPlatformLoading(false);
     }
 
@@ -2951,6 +3297,104 @@ function App() {
     setPlatformPressings((current) => [fromDatabasePressing(data), ...current]);
     setDatabaseError("");
     return { ok: true };
+  }
+
+  async function createPlatformAnnouncement({ title, audience, message }) {
+    const row = {
+      title: title.trim(),
+      message: message.trim(),
+      audience,
+      status: "published",
+      updated_at: new Date().toISOString()
+    };
+
+    if (!isSupabaseConfigured || !isPlatformAdmin) {
+      const localAnnouncement = fromDatabaseAnnouncement({
+        ...row,
+        id: crypto.randomUUID(),
+        created_at: new Date().toISOString()
+      });
+      setPlatformAnnouncements((current) => [localAnnouncement, ...current]);
+      return { ok: true };
+    }
+
+    const { data, error } = await supabase
+      .from("platform_announcements")
+      .insert(row)
+      .select("*")
+      .single();
+
+    if (error) {
+      setDatabaseError("Publication de l'annonce echouee dans Supabase.");
+      return { ok: false, message: "Publication impossible dans Supabase." };
+    }
+
+    setPlatformAnnouncements((current) => [fromDatabaseAnnouncement(data), ...current]);
+    setDatabaseError("");
+    return { ok: true };
+  }
+
+  async function createSupportTicket({ subject, priority }) {
+    if (!currentPressingId) {
+      return { ok: false, message: "Aucun pressing n'est associe a ce compte." };
+    }
+
+    const row = {
+      pressing_id: currentPressingId,
+      subject: subject.trim(),
+      priority,
+      status: "open",
+      updated_at: new Date().toISOString()
+    };
+
+    if (!isSupabaseConfigured) {
+      const localTicket = fromDatabaseSupportTicket({
+        ...row,
+        id: crypto.randomUUID(),
+        created_at: new Date().toISOString()
+      });
+      setPressingSupportTickets((current) => [localTicket, ...current]);
+      return { ok: true };
+    }
+
+    const { data, error } = await supabase
+      .from("platform_support_tickets")
+      .insert(row)
+      .select("*")
+      .single();
+
+    if (error) {
+      setDatabaseError("Envoi de la demande support echoue dans Supabase.");
+      return { ok: false, message: "Envoi impossible dans Supabase." };
+    }
+
+    setPressingSupportTickets((current) => [fromDatabaseSupportTicket(data), ...current]);
+    setDatabaseError("");
+    return { ok: true };
+  }
+
+  async function updateSupportTicketStatus(ticketId, status) {
+    setPlatformSupportTickets((current) =>
+      current.map((ticket) =>
+        ticket.id === ticketId ? { ...ticket, status, updatedAt: new Date().toISOString() } : ticket
+      )
+    );
+
+    if (!isSupabaseConfigured || !isPlatformAdmin) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("platform_support_tickets")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", ticketId);
+
+    if (error) {
+      setDatabaseError("Mise a jour du support echouee dans Supabase.");
+      return;
+    }
+
+    setDatabaseError("");
   }
 
   function resetArticleModal() {
@@ -3471,6 +3915,10 @@ function App() {
     setPlatformPressings([]);
     setPlatformUsers([]);
     setPlatformInvoices([]);
+    setPlatformAnnouncements([]);
+    setPlatformSupportTickets([]);
+    setPressingAnnouncements([]);
+    setPressingSupportTickets([]);
   }
 
   if (authLoading) {
@@ -3495,13 +3943,17 @@ function App() {
         databaseError={databaseError}
         historyLoading={historyLoading}
         onCreatePressing={createPlatformPressing}
+        onCreatePlatformAnnouncement={createPlatformAnnouncement}
         onLogout={logoutAdmin}
         onUpdateInvoiceStatus={updateInvoiceStatus}
         onUpdatePressingSubscription={updatePressingSubscription}
+        onUpdateSupportTicketStatus={updateSupportTicketStatus}
         orderHistory={orderHistory}
+        platformAnnouncements={platformAnnouncements}
         platformInvoices={platformInvoices}
         platformLoading={platformLoading}
         platformPressings={platformPressings}
+        platformSupportTickets={platformSupportTickets}
         platformUsers={platformUsers}
         pressingName="Super Admin"
         role={currentRole}
@@ -3517,9 +3969,12 @@ function App() {
       <SupervisorDashboard
         databaseError={databaseError}
         historyLoading={historyLoading}
+        onCreateSupportTicket={createSupportTicket}
         onLogout={logoutAdmin}
         orderHistory={orderHistory}
+        pressingAnnouncements={pressingAnnouncements}
         pressingName={currentPressingName}
+        pressingSupportTickets={pressingSupportTickets}
         role={currentRole}
         selectedOrder={selectedReportOrder}
         setSelectedOrder={setSelectedReportOrder}
@@ -3757,7 +4212,10 @@ function App() {
 
         {activeAdminView === "settings" && (
           <SettingsView
+            onCreateSupportTicket={createSupportTicket}
+            pressingAnnouncements={pressingAnnouncements}
             pressingName={currentPressingName}
+            pressingSupportTickets={pressingSupportTickets}
             role={currentRole}
             userEmail={adminSession.user.email}
           />
