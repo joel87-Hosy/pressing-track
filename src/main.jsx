@@ -678,9 +678,41 @@ function getPlatformPressingRows(pressings, orderHistory, platformUsers) {
 }
 
 function AppShell({ activeView, children, menuItems, onLogout, onSelectView, pressingName, role }) {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  function selectView(viewId) {
+    onSelectView(viewId);
+    setIsMobileMenuOpen(false);
+  }
+
   return (
-    <div className="workspace-shell">
-      <aside className="workspace-sidebar" aria-label="Menu principal">
+    <div className={isMobileMenuOpen ? "workspace-shell menu-open" : "workspace-shell"}>
+      <header className="mobile-workspace-header">
+        <div>
+          <p className="eyebrow">{pressingName}</p>
+          <strong>PressingTrack</strong>
+        </div>
+        <button
+          aria-expanded={isMobileMenuOpen}
+          aria-controls="workspace-sidebar"
+          className="mobile-menu-button"
+          type="button"
+          onClick={() => setIsMobileMenuOpen((current) => !current)}
+        >
+          {isMobileMenuOpen ? "Fermer" : "Menu"}
+        </button>
+      </header>
+
+      {isMobileMenuOpen && (
+        <button
+          aria-label="Fermer le menu"
+          className="workspace-menu-backdrop"
+          type="button"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      <aside className="workspace-sidebar" id="workspace-sidebar" aria-label="Menu principal">
         <div>
           <p className="eyebrow">{pressingName}</p>
           <h1>PressingTrack</h1>
@@ -695,7 +727,7 @@ function AppShell({ activeView, children, menuItems, onLogout, onSelectView, pre
                 className={activeView === item.id ? "workspace-nav-item active" : "workspace-nav-item"}
                 key={item.id}
                 type="button"
-                onClick={() => onSelectView(item.id)}
+                onClick={() => selectView(item.id)}
               >
                 {item.label}
               </button>
