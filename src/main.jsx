@@ -3213,6 +3213,7 @@ function ClientPortal({
   const [isClientMenuOpen, setIsClientMenuOpen] = useState(false);
   const [serviceType, setServiceType] = useState(DEFAULT_PRICE_OPTION_ID);
   const [articleId, setArticleId] = useState(MOCK_ARTICLES[0].id);
+  const [fanicoBundleId, setFanicoBundleId] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [items, setItems] = useState([]);
   const [collectionAddress, setCollectionAddress] = useState("");
@@ -3222,9 +3223,22 @@ function ClientPortal({
   const [requestStatus, setRequestStatus] = useState({ type: "", message: "" });
   const [isSendingRequest, setIsSendingRequest] = useState(false);
   const [locatingAddress, setLocatingAddress] = useState("");
-  const serviceOptions = DEPOSIT_PRICE_OPTIONS;
+  const serviceOptions = PRICE_OPTIONS;
   const isClientSuspended = clientProfile?.status === "suspended";
   const selectedOptionPrices = getOptionPrices(clientArticlePrices, serviceType);
+  const clientFanicoRows = useMemo(() => {
+    const fanicoPrices = getOptionPrices(clientArticlePrices, FANICO_PRICE_OPTION_ID);
+
+    return Object.entries(fanicoPrices)
+      .filter(([bundleId]) => bundleId.startsWith(FANICO_BUNDLE_PREFIX))
+      .map(([bundleId, price]) => ({
+        id: bundleId,
+        quantity: getFanicoBundleQuantity(bundleId),
+        price
+      }))
+      .filter((row) => Number.isFinite(row.quantity) && row.quantity > 0)
+      .sort((a, b) => a.quantity - b.quantity);
+  }, [clientArticlePrices]);
   const clientPricedArticles = MOCK_ARTICLES.map((article) => ({
     ...article,
     price:
@@ -3233,6 +3247,8 @@ function ClientPortal({
         : selectedOptionPrices[article.id] ?? 0
   }));
   const selectedArticle = clientPricedArticles.find((article) => article.id === articleId) || clientPricedArticles[0];
+  const selectedFanicoBundle =
+    clientFanicoRows.find((row) => row.id === fanicoBundleId) || clientFanicoRows[0];
   const estimatedTotal = items.reduce((sum, item) => sum + item.total, 0);
 
   function selectClientView(viewId) {
@@ -3241,6 +3257,32 @@ function ClientPortal({
   }
 
   function addRequestItem() {
+    if (serviceType === FANICO_PRICE_OPTION_ID) {
+      if (!selectedFanicoBundle) {
+        setRequestStatus({
+          type: "error",
+          message: "Aucun forfait Fanico n'est configure par ce pressing."
+        });
+        return;
+      }
+
+      setItems((current) => [
+        ...current,
+        {
+          lineId: crypto.randomUUID(),
+          articleId: selectedFanicoBundle.id,
+          name: `Fanico ${selectedFanicoBundle.quantity} vetement${
+            selectedFanicoBundle.quantity > 1 ? "s" : ""
+          }`,
+          quantity: selectedFanicoBundle.quantity,
+          unitPrice: selectedFanicoBundle.price,
+          total: selectedFanicoBundle.price
+        }
+      ]);
+      setRequestStatus({ type: "", message: "" });
+      return;
+    }
+
     const itemQuantity = Math.max(1, Number(quantity.replace(/\D/g, "")) || 1);
 
     setItems((current) => [
@@ -3418,19 +3460,43 @@ function ClientPortal({
           ))}
         </div>
 
-        <div className="article-preview-list">
-          {clientPricedArticles.map((article) => (
-            <article className="article-preview-item" key={article.id}>
-              <span className="mini-icon" aria-hidden="true">
-                {article.icon}
-              </span>
-              <div>
-                <strong>{article.name}</strong>
-                <small>{formatMoney(article.price)}</small>
+        {serviceType === FANICO_PRICE_OPTION_ID ? (
+          <div className="article-preview-list">
+            {clientFanicoRows.length === 0 ? (
+              <div className="empty-history">
+                Aucun tarif Fanico n'est encore configure par ce pressing.
               </div>
-            </article>
-          ))}
-        </div>
+            ) : (
+              clientFanicoRows.map((row) => (
+                <article className="article-preview-item" key={row.id}>
+                  <span className="mini-icon" aria-hidden="true">
+                    FA
+                  </span>
+                  <div>
+                    <strong>
+                      Fanico {row.quantity} vetement{row.quantity > 1 ? "s" : ""}
+                    </strong>
+                    <small>{formatMoney(row.price)}</small>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        ) : (
+          <div className="article-preview-list">
+            {clientPricedArticles.map((article) => (
+              <article className="article-preview-item" key={article.id}>
+                <span className="mini-icon" aria-hidden="true">
+                  {article.icon}
+                </span>
+                <div>
+                  <strong>{article.name}</strong>
+                  <small>{formatMoney(article.price)}</small>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
       )}
 
@@ -3451,24 +3517,46 @@ function ClientPortal({
         )}
 
         <form className="platform-form" onSubmit={submitClientRequest}>
-          <label>
-            Vetement
-            <select value={articleId} onChange={(event) => setArticleId(event.target.value)}>
-              {clientPricedArticles.map((article) => (
-                <option key={article.id} value={article.id}>
-                  {article.name} - {formatMoney(article.price)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Quantite
-            <input
-              inputMode="numeric"
-              value={quantity}
-              onChange={(event) => setQuantity(event.target.value.replace(/\D/g, ""))}
-            />
-          </label>
+          {serviceType === FANICO_PRICE_OPTION_ID ? (
+            <label>
+              Forfait Fanico
+              <select
+                value={selectedFanicoBundle?.id || ""}
+                onChange={(event) => setFanicoBundleId(event.target.value)}
+              >
+                {clientFanicoRows.length === 0 ? (
+                  <option value="">Aucun forfait Fanico configure</option>
+                ) : (
+                  clientFanicoRows.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {row.quantity} vetement{row.quantity > 1 ? "s" : ""} - {formatMoney(row.price)}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+          ) : (
+            <>
+              <label>
+                Vetement
+                <select value={articleId} onChange={(event) => setArticleId(event.target.value)}>
+                  {clientPricedArticles.map((article) => (
+                    <option key={article.id} value={article.id}>
+                      {article.name} - {formatMoney(article.price)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Quantite
+                <input
+                  inputMode="numeric"
+                  value={quantity}
+                  onChange={(event) => setQuantity(event.target.value.replace(/\D/g, ""))}
+                />
+              </label>
+            </>
+          )}
           <button type="button" onClick={addRequestItem}>
             Ajouter
           </button>
