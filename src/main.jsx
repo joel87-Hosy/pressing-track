@@ -459,6 +459,7 @@ const SUPERVISOR_MENU = [
 ];
 
 const PLATFORM_MENU = [
+  { id: "endClients", label: "Clients finaux" },
   { id: "dashboard", label: "📊 Tableau de bord" },
   { type: "separator" },
   { id: "pressings", label: "🏪 Pressings" },
@@ -669,9 +670,11 @@ function fromDatabaseClientProfile(row) {
     id: row.id,
     userId: row.user_id,
     pressingId: row.pressing_id,
+    pressingName: row.pressings?.name || "",
     fullName: row.full_name,
     email: row.email,
     phone: row.phone,
+    status: row.status || "active",
     createdAt: row.created_at
   };
 }
@@ -680,6 +683,7 @@ function fromDatabaseClientRequest(row) {
   return {
     id: row.id,
     pressingId: row.pressing_id,
+    pressingName: row.pressings?.name || "",
     clientProfileId: row.client_profile_id,
     clientUserId: row.client_user_id,
     clientName: row.client_name,
@@ -1130,6 +1134,24 @@ function getUtilizationRows(pressingRows) {
     .sort((a, b) => b.tickets - a.tickets);
 }
 
+function getPlatformEndClientRows(clientProfiles, clientRequests) {
+  return clientProfiles
+    .map((client) => {
+      const requests = clientRequests.filter((request) => request.clientProfileId === client.id);
+      const lastRequest = requests[0]?.createdAt || null;
+      const estimatedTotal = requests.reduce((sum, request) => sum + request.estimatedTotal, 0);
+
+      return {
+        ...client,
+        requests,
+        requestCount: requests.length,
+        lastRequest,
+        estimatedTotal
+      };
+    })
+    .sort((a, b) => new Date(b.lastRequest || b.createdAt).getTime() - new Date(a.lastRequest || a.createdAt).getTime());
+}
+
 function PlatformDashboard({
   databaseError,
   historyLoading,
@@ -1138,9 +1160,12 @@ function PlatformDashboard({
   onLogout,
   orderHistory,
   onUpdateInvoiceStatus,
+  onUpdateEndClientStatus,
   onUpdatePressingSubscription,
   onUpdateSupportTicketStatus,
   platformAnnouncements,
+  platformClientProfiles,
+  platformClientRequests,
   platformInvoices,
   platformLoading,
   platformPressings,
@@ -1154,9 +1179,14 @@ function PlatformDashboard({
 }) {
   const [activeView, setActiveView] = useState("dashboard");
   const [selectedPressing, setSelectedPressing] = useState(null);
+  const [selectedEndClient, setSelectedEndClient] = useState(null);
   const pressingRows = useMemo(
     () => getPlatformPressingRows(platformPressings, orderHistory, platformUsers),
     [orderHistory, platformPressings, platformUsers]
+  );
+  const endClientRows = useMemo(
+    () => getPlatformEndClientRows(platformClientProfiles, platformClientRequests),
+    [platformClientProfiles, platformClientRequests]
   );
   const activePressings = pressingRows.filter((pressing) => pressing.subscriptionStatus === "active");
   const inactivePressings = pressingRows.filter((pressing) => pressing.subscriptionStatus !== "active");
@@ -1270,6 +1300,14 @@ function PlatformDashboard({
         />
       )}
 
+      {activeView === "endClients" && (
+        <PlatformEndClientsView
+          endClientRows={endClientRows}
+          onSelectClient={setSelectedEndClient}
+          onUpdateEndClientStatus={onUpdateEndClientStatus}
+        />
+      )}
+
       {activeView === "billing" && (
         <PlatformBillingView
           loading={platformLoading}
@@ -1319,6 +1357,11 @@ function PlatformDashboard({
         onUpdatePressingSubscription={onUpdatePressingSubscription}
         pressing={selectedPressing}
         users={platformUsers.filter((user) => user.pressingId === selectedPressing?.id)}
+      />
+      <PlatformEndClientDetailModal
+        client={selectedEndClient}
+        onClose={() => setSelectedEndClient(null)}
+        onUpdateEndClientStatus={onUpdateEndClientStatus}
       />
     </AppShell>
   );
@@ -1552,6 +1595,161 @@ function PlatformPressingsTable({
         )}
       </div>
     </section>
+  );
+}
+
+function PlatformEndClientsView({ endClientRows, onSelectClient, onUpdateEndClientStatus }) {
+  const activeClients = endClientRows.filter((client) => client.status === "active");
+  const suspendedClients = endClientRows.filter((client) => client.status === "suspended");
+
+  return (
+    <div className="workspace-stack">
+      <section className="report-grid" aria-label="Indicateurs clients finaux">
+        <article className="report-card">
+          <span>Clients inscrits</span>
+          <strong>{endClientRows.length}</strong>
+        </article>
+        <article className="report-card">
+          <span>Actifs</span>
+          <strong>{activeClients.length}</strong>
+        </article>
+        <article className="report-card">
+          <span>Suspendus</span>
+          <strong>{suspendedClients.length}</strong>
+        </article>
+        <article className="report-card wide">
+          <span>Demandes clients</span>
+          <strong>{endClientRows.reduce((sum, client) => sum + client.requestCount, 0)}</strong>
+        </article>
+      </section>
+
+      <section className="report-section" aria-label="Clients finaux">
+        <div className="section-heading">
+          <div>
+            <h2>Clients finaux</h2>
+            <p>Tous les clients inscrits via les liens des pressings.</p>
+          </div>
+          <strong>{endClientRows.length}</strong>
+        </div>
+
+        <div className="client-list">
+          {endClientRows.length === 0 ? (
+            <div className="empty-history">Aucun client final inscrit.</div>
+          ) : (
+            endClientRows.map((client) => (
+              <article className="client-item" key={client.id}>
+                <div>
+                  <strong>{client.fullName}</strong>
+                  <span>{client.phone} - {client.email}</span>
+                </div>
+                <div>
+                  <span>Pressing: {client.pressingName || client.pressingId}</span>
+                  <span>Derniere demande: {formatDateTime(client.lastRequest)}</span>
+                </div>
+                <div className="platform-actions">
+                  <button type="button" onClick={() => onSelectClient(client)}>
+                    Voir
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateEndClientStatus(
+                        client.id,
+                        client.status === "active" ? "suspended" : "active"
+                      )
+                    }
+                  >
+                    {client.status === "active" ? "Suspendre" : "Activer"}
+                  </button>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PlatformEndClientDetailModal({ client, onClose, onUpdateEndClientStatus }) {
+  if (!client) {
+    return null;
+  }
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="pickup-modal">
+        <div className="modal-title-row">
+          <div>
+            <p className="eyebrow">Client final</p>
+            <h2>{client.fullName}</h2>
+          </div>
+          <button type="button" onClick={onClose}>
+            Fermer
+          </button>
+        </div>
+
+        <div className="pickup-summary">
+          <div>
+            <span>Pressing</span>
+            <strong>{client.pressingName || "-"}</strong>
+          </div>
+          <div>
+            <span>Telephone</span>
+            <strong>{client.phone}</strong>
+          </div>
+          <div>
+            <span>Demandes</span>
+            <strong>{client.requestCount}</strong>
+          </div>
+          <div>
+            <span>Statut</span>
+            <strong>{client.status}</strong>
+          </div>
+        </div>
+
+        <div className="client-detail-list">
+          {client.requests.length === 0 ? (
+            <div className="empty-history">Aucune demande pour ce client.</div>
+          ) : (
+            client.requests.map((request) => (
+              <article className="client-detail-ticket" key={request.id}>
+                <div className="client-detail-ticket-top">
+                  <div>
+                    <strong>{getPriceOptionLabel(request.serviceType)}</strong>
+                    <span>{formatDateTime(request.createdAt)}</span>
+                  </div>
+                  <span>{CLIENT_REQUEST_STATUS_LABELS[request.status] || request.status}</span>
+                </div>
+                <div className="client-detail-ticket-meta">
+                  <span>Collecte: {request.collectionAddress}</span>
+                  <span>Livraison: {request.deliveryAddress || request.collectionAddress}</span>
+                  <strong>{formatMoney(request.estimatedTotal)}</strong>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+
+        <div className="modal-actions">
+          <button className="back-button" type="button" onClick={onClose}>
+            Fermer
+          </button>
+          <button
+            className="add-button"
+            type="button"
+            onClick={() =>
+              onUpdateEndClientStatus(
+                client.id,
+                client.status === "active" ? "suspended" : "active"
+              )
+            }
+          >
+            {client.status === "active" ? "Suspendre le client" : "Activer le client"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2843,6 +3041,7 @@ function ClientPortal({
   const [requestStatus, setRequestStatus] = useState({ type: "", message: "" });
   const [isSendingRequest, setIsSendingRequest] = useState(false);
   const serviceOptions = DEPOSIT_PRICE_OPTIONS;
+  const isClientSuspended = clientProfile?.status === "suspended";
   const selectedOptionPrices = getOptionPrices(clientArticlePrices, serviceType);
   const clientPricedArticles = MOCK_ARTICLES.map((article) => ({
     ...article,
@@ -2969,6 +3168,12 @@ function ClientPortal({
           <strong>{formatMoney(estimatedTotal)}</strong>
         </div>
 
+        {isClientSuspended && (
+          <div className="database-error">
+            Votre compte client est suspendu. Contactez le pressing pour reactiver l'acces.
+          </div>
+        )}
+
         <form className="platform-form" onSubmit={submitClientRequest}>
           <label>
             Vetement
@@ -3029,7 +3234,7 @@ function ClientPortal({
             <div className={`password-status ${requestStatus.type}`}>{requestStatus.message}</div>
           )}
 
-          <button type="submit" disabled={isSendingRequest}>
+          <button type="submit" disabled={isSendingRequest || isClientSuspended}>
             {isSendingRequest ? "Envoi..." : "Envoyer la demande"}
           </button>
         </form>
@@ -3476,6 +3681,8 @@ function App() {
   const [platformInvoices, setPlatformInvoices] = useState([]);
   const [platformAnnouncements, setPlatformAnnouncements] = useState([]);
   const [platformSupportTickets, setPlatformSupportTickets] = useState([]);
+  const [platformClientProfiles, setPlatformClientProfiles] = useState([]);
+  const [platformClientRequests, setPlatformClientRequests] = useState([]);
   const [pressingAnnouncements, setPressingAnnouncements] = useState([]);
   const [pressingSupportTickets, setPressingSupportTickets] = useState([]);
   const [clientProfile, setClientProfile] = useState(null);
@@ -3870,6 +4077,8 @@ function App() {
       setPlatformInvoices([]);
       setPlatformAnnouncements([]);
       setPlatformSupportTickets([]);
+      setPlatformClientProfiles([]);
+      setPlatformClientRequests([]);
       return;
     }
 
@@ -3882,7 +4091,9 @@ function App() {
         { data: usersData, error: usersError },
         { data: invoicesData, error: invoicesError },
         { data: announcementsData, error: announcementsError },
-        { data: supportTicketsData, error: supportTicketsError }
+        { data: supportTicketsData, error: supportTicketsError },
+        { data: clientProfilesData, error: clientProfilesError },
+        { data: clientRequestsData, error: clientRequestsError }
       ] = await Promise.all([
           supabase.from("pressings").select("*").order("created_at", { ascending: false }),
           supabase.from("platform_user_accounts").select("*").order("created_at", { ascending: false }),
@@ -3897,6 +4108,14 @@ function App() {
           supabase
             .from("platform_support_tickets")
             .select("*, pressings(name)")
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("client_profiles")
+            .select("*, pressings(name)")
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("client_service_requests")
+            .select("*, pressings(name)")
             .order("created_at", { ascending: false })
         ]);
 
@@ -3905,10 +4124,12 @@ function App() {
         usersError ||
         invoicesError ||
         announcementsError ||
-        supportTicketsError
+        supportTicketsError ||
+        clientProfilesError ||
+        clientRequestsError
       ) {
         setDatabaseError(
-          "Lecture plateforme incomplete. Executez la mise a jour SQL pour activer utilisateurs, abonnements, messagerie et support."
+          "Lecture plateforme incomplete. Executez la mise a jour SQL pour activer utilisateurs, clients, abonnements, messagerie et support."
         );
         setPlatformLoading(false);
         return;
@@ -3919,6 +4140,8 @@ function App() {
       setPlatformInvoices(invoicesData.map(fromDatabaseInvoice));
       setPlatformAnnouncements(announcementsData.map(fromDatabaseAnnouncement));
       setPlatformSupportTickets(supportTicketsData.map(fromDatabaseSupportTicket));
+      setPlatformClientProfiles(clientProfilesData.map(fromDatabaseClientProfile));
+      setPlatformClientRequests(clientRequestsData.map(fromDatabaseClientRequest));
       setPlatformLoading(false);
     }
 
@@ -4108,6 +4331,30 @@ function App() {
 
     if (error) {
       setDatabaseError("Mise a jour du support echouee dans Supabase.");
+      return;
+    }
+
+    setDatabaseError("");
+  }
+
+  async function updateEndClientStatus(clientProfileId, status) {
+    setPlatformClientProfiles((current) =>
+      current.map((client) =>
+        client.id === clientProfileId ? { ...client, status } : client
+      )
+    );
+
+    if (!isSupabaseConfigured || !isPlatformAdmin) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("client_profiles")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", clientProfileId);
+
+    if (error) {
+      setDatabaseError("Mise a jour du client final echouee dans Supabase.");
       return;
     }
 
@@ -4702,6 +4949,8 @@ function App() {
     setPlatformInvoices([]);
     setPlatformAnnouncements([]);
     setPlatformSupportTickets([]);
+    setPlatformClientProfiles([]);
+    setPlatformClientRequests([]);
     setPressingAnnouncements([]);
     setPressingSupportTickets([]);
     setClientProfile(null);
@@ -4753,10 +5002,13 @@ function App() {
         onCreatePlatformAnnouncement={createPlatformAnnouncement}
         onLogout={logoutAdmin}
         onUpdateInvoiceStatus={updateInvoiceStatus}
+        onUpdateEndClientStatus={updateEndClientStatus}
         onUpdatePressingSubscription={updatePressingSubscription}
         onUpdateSupportTicketStatus={updateSupportTicketStatus}
         orderHistory={orderHistory}
         platformAnnouncements={platformAnnouncements}
+        platformClientProfiles={platformClientProfiles}
+        platformClientRequests={platformClientRequests}
         platformInvoices={platformInvoices}
         platformLoading={platformLoading}
         platformPressings={platformPressings}
