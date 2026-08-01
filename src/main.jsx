@@ -21,6 +21,8 @@ const MOCK_ARTICLES = [
 
 const DEFAULT_ARTICLE_IDS = new Set(MOCK_ARTICLES.map((article) => article.id));
 const CUSTOM_ARTICLES_STORAGE_KEY = "pressingtrack-custom-articles";
+const PROFILE_AVATAR_BUCKET = "profile-avatars";
+const PROFILE_AVATAR_MAX_SIZE = 2 * 1024 * 1024;
 const DEFAULT_PRICE_OPTION_ID = "normal";
 const FANICO_PRICE_OPTION_ID = "fanico";
 const FANICO_BUNDLE_PREFIX = "bundle-";
@@ -2566,6 +2568,268 @@ function StockView({ orderHistory }) {
   );
 }
 
+function AccountProfilePanel({ displayName, email, phone }) {
+  const [avatarPreview, setAvatarPreview] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [profileStatus, setProfileStatus] = useState({ type: "", message: "" });
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [isSendingReset, setIsSendingReset] = useState(false);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    async function loadAvatar() {
+      const { data } = await supabase.auth.getUser();
+      setAvatarPreview(data.user?.user_metadata?.avatar_url || "");
+    }
+
+    loadAvatar();
+  }, []);
+
+  async function updateAvatar(event) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setProfileStatus({ type: "error", message: "Choisissez une image valide." });
+      return;
+    }
+
+    if (file.size > PROFILE_AVATAR_MAX_SIZE) {
+      setProfileStatus({ type: "error", message: "La photo ne doit pas depasser 2 Mo." });
+      return;
+    }
+
+    const localPreviewUrl = URL.createObjectURL(file);
+    setAvatarPreview(localPreviewUrl);
+    setProfileStatus({ type: "", message: "" });
+
+    if (!isSupabaseConfigured) {
+      setProfileStatus({ type: "success", message: "Photo mise a jour localement." });
+      return;
+    }
+
+    setIsUpdatingProfile(true);
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const user = userData.user;
+
+    if (userError || !user) {
+      setIsUpdatingProfile(false);
+      setProfileStatus({ type: "error", message: "Utilisateur connecte introuvable." });
+      return;
+    }
+
+    const previousAvatarPath = user.user_metadata?.avatar_path;
+    const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const safeExtension = ["jpg", "jpeg", "png", "webp", "gif"].includes(extension) ? extension : "jpg";
+    const avatarPath = `${user.id}/avatar-${Date.now()}.${safeExtension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(PROFILE_AVATAR_BUCKET)
+      .upload(avatarPath, file, {
+        cacheControl: "3600",
+        contentType: file.type,
+        upsert: true
+      });
+
+    if (uploadError) {
+      setIsUpdatingProfile(false);
+      setProfileStatus({
+        type: "error",
+        message: "Upload impossible. Verifiez que le bucket profile-avatars existe."
+      });
+      return;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(PROFILE_AVATAR_BUCKET)
+      .getPublicUrl(avatarPath);
+    const avatarUrl = publicUrlData.publicUrl;
+
+    const { error: updateError } = await supabase.auth.updateUser({
+      data: {
+        avatar_path: avatarPath,
+        avatar_url: avatarUrl,
+        avatar_updated_at: new Date().toISOString()
+      }
+    });
+
+    if (previousAvatarPath && previousAvatarPath !== avatarPath) {
+      await supabase.storage.from(PROFILE_AVATAR_BUCKET).remove([previousAvatarPath]);
+    }
+
+    setIsUpdatingProfile(false);
+
+    if (updateError) {
+      setProfileStatus({ type: "error", message: "Photo envoyee, mais metadata non mises a jour." });
+      return;
+    }
+
+    setAvatarPreview(avatarUrl);
+    setProfileStatus({ type: "success", message: "Photo de profil mise a jour." });
+  }
+
+  async function submitPasswordUpdate(event) {
+    event.preventDefault();
+    setProfileStatus({ type: "", message: "" });
+
+    if (!isSupabaseConfigured) {
+      setProfileStatus({
+        type: "error",
+        message: "Supabase doit etre configure pour modifier le mot de passe."
+      });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setProfileStatus({
+        type: "error",
+        message: "Le nouveau mot de passe doit contenir au moins 6 caracteres."
+      });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setProfileStatus({
+        type: "error",
+        message: "Les deux mots de passe ne correspondent pas."
+      });
+      return;
+    }
+
+    setIsUpdatingProfile(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setIsUpdatingProfile(false);
+
+    if (error) {
+      setProfileStatus({
+        type: "error",
+        message: "Modification impossible. Reconnectez-vous puis reessayez."
+      });
+      return;
+    }
+
+    setNewPassword("");
+    setConfirmPassword("");
+    setProfileStatus({ type: "success", message: "Mot de passe mis a jour." });
+  }
+
+  async function sendPasswordReset() {
+    setProfileStatus({ type: "", message: "" });
+
+    if (!email) {
+      setProfileStatus({ type: "error", message: "Aucun email n'est associe a ce compte." });
+      return;
+    }
+
+    if (!isSupabaseConfigured) {
+      setProfileStatus({
+        type: "error",
+        message: "Supabase doit etre configure pour envoyer une reinitialisation."
+      });
+      return;
+    }
+
+    setIsSendingReset(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin
+    });
+    setIsSendingReset(false);
+
+    if (error) {
+      setProfileStatus({ type: "error", message: "Envoi du lien de reinitialisation impossible." });
+      return;
+    }
+
+    setProfileStatus({ type: "success", message: "Lien de reinitialisation envoye par email." });
+  }
+
+  return (
+    <section className="report-section" aria-label="Mon profil">
+      <div className="section-heading">
+        <div>
+          <h2>Mon profil</h2>
+          <p>Photo, informations du compte et securite.</p>
+        </div>
+      </div>
+
+      <div className="profile-panel">
+        <div className="profile-avatar">
+          {avatarPreview ? <img alt="Photo de profil" src={avatarPreview} /> : <span>Photo</span>}
+        </div>
+        <div className="profile-info">
+          <strong>{displayName || "Compte connecte"}</strong>
+          <span>{email || "Email non renseigne"}</span>
+          {phone && <span>{phone}</span>}
+          <label className="profile-upload">
+            Changer la photo
+            <input accept="image/*" type="file" onChange={updateAvatar} />
+          </label>
+        </div>
+      </div>
+
+      <form className="password-settings" onSubmit={submitPasswordUpdate}>
+        <div>
+          <h3>Mot de passe</h3>
+          <p>{email || "Compte connecte"}</p>
+        </div>
+
+        <div className="password-fields">
+          <label htmlFor="new-password">
+            Nouveau mot de passe
+            <input
+              id="new-password"
+              autoComplete="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(event) => {
+                setNewPassword(event.target.value);
+                setProfileStatus({ type: "", message: "" });
+              }}
+              placeholder="Au moins 6 caracteres"
+            />
+          </label>
+
+          <label htmlFor="confirm-password">
+            Confirmer le mot de passe
+            <input
+              id="confirm-password"
+              autoComplete="new-password"
+              type="password"
+              value={confirmPassword}
+              onChange={(event) => {
+                setConfirmPassword(event.target.value);
+                setProfileStatus({ type: "", message: "" });
+              }}
+              placeholder="Repeter le mot de passe"
+            />
+          </label>
+        </div>
+
+        <div className="profile-actions">
+          <button type="submit" disabled={isUpdatingProfile}>
+            {isUpdatingProfile ? "Mise a jour..." : "Modifier le mot de passe"}
+          </button>
+          <button type="button" disabled={isSendingReset} onClick={sendPasswordReset}>
+            {isSendingReset ? "Envoi..." : "Envoyer un lien de reinitialisation"}
+          </button>
+        </div>
+
+        {profileStatus.message && (
+          <div className={`password-status ${profileStatus.type}`}>{profileStatus.message}</div>
+        )}
+      </form>
+    </section>
+  );
+}
+
 function SettingsView({
   onCreateSupportTicket,
   clientPortalLink,
@@ -2576,59 +2840,10 @@ function SettingsView({
   showTenantMessaging = true,
   userEmail
 }) {
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordStatus, setPasswordStatus] = useState({ type: "", message: "" });
-  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [supportSubject, setSupportSubject] = useState("");
   const [supportPriority, setSupportPriority] = useState("normal");
   const [supportStatus, setSupportStatus] = useState({ type: "", message: "" });
   const [isCreatingSupportTicket, setIsCreatingSupportTicket] = useState(false);
-
-  async function submitPasswordUpdate(event) {
-    event.preventDefault();
-    setPasswordStatus({ type: "", message: "" });
-
-    if (!isSupabaseConfigured) {
-      setPasswordStatus({
-        type: "error",
-        message: "Supabase doit etre configure pour modifier le mot de passe."
-      });
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      setPasswordStatus({
-        type: "error",
-        message: "Le nouveau mot de passe doit contenir au moins 6 caracteres."
-      });
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setPasswordStatus({
-        type: "error",
-        message: "Les deux mots de passe ne correspondent pas."
-      });
-      return;
-    }
-
-    setIsUpdatingPassword(true);
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    setIsUpdatingPassword(false);
-
-    if (error) {
-      setPasswordStatus({
-        type: "error",
-        message: "Modification impossible. Verifiez le mot de passe ou reconnectez-vous."
-      });
-      return;
-    }
-
-    setNewPassword("");
-    setConfirmPassword("");
-    setPasswordStatus({ type: "success", message: "Mot de passe mis a jour." });
-  }
 
   async function submitSupportTicket(event) {
     event.preventDefault();
@@ -2681,54 +2896,12 @@ function SettingsView({
             <strong>{ROLE_LABELS[role] || role}</strong>
           </article>
         </div>
-
-        <form className="password-settings" onSubmit={submitPasswordUpdate}>
-          <div>
-            <h3>Mot de passe</h3>
-            <p>{userEmail || "Compte connecte"}</p>
-          </div>
-
-          <div className="password-fields">
-            <label htmlFor="new-password">
-              Nouveau mot de passe
-              <input
-                id="new-password"
-                autoComplete="new-password"
-                type="password"
-                value={newPassword}
-                onChange={(event) => {
-                  setNewPassword(event.target.value);
-                  setPasswordStatus({ type: "", message: "" });
-                }}
-                placeholder="Au moins 6 caracteres"
-              />
-            </label>
-
-            <label htmlFor="confirm-password">
-              Confirmer le mot de passe
-              <input
-                id="confirm-password"
-                autoComplete="new-password"
-                type="password"
-                value={confirmPassword}
-                onChange={(event) => {
-                  setConfirmPassword(event.target.value);
-                  setPasswordStatus({ type: "", message: "" });
-                }}
-                placeholder="Repeter le mot de passe"
-              />
-            </label>
-          </div>
-
-          {passwordStatus.message && (
-            <div className={`password-status ${passwordStatus.type}`}>{passwordStatus.message}</div>
-          )}
-
-          <button type="submit" disabled={isUpdatingPassword}>
-            {isUpdatingPassword ? "Mise a jour..." : "Modifier le mot de passe"}
-          </button>
-        </form>
       </section>
+
+      <AccountProfilePanel
+        displayName={pressingName}
+        email={userEmail}
+      />
 
       {clientPortalLink && (
         <section className="report-section" aria-label="Lien client">
@@ -3030,6 +3203,14 @@ function ClientPortal({
   onLogout,
   pressingName
 }) {
+  const CLIENT_PORTAL_MENU = [
+    { id: "prices", label: "Tarifs" },
+    { id: "request", label: "Nouvelle demande" },
+    { id: "history", label: "Mes demandes" },
+    { id: "account", label: "Mon profil" }
+  ];
+  const [activeClientView, setActiveClientView] = useState("prices");
+  const [isClientMenuOpen, setIsClientMenuOpen] = useState(false);
   const [serviceType, setServiceType] = useState(DEFAULT_PRICE_OPTION_ID);
   const [articleId, setArticleId] = useState(MOCK_ARTICLES[0].id);
   const [quantity, setQuantity] = useState("1");
@@ -3040,6 +3221,7 @@ function ClientPortal({
   const [note, setNote] = useState("");
   const [requestStatus, setRequestStatus] = useState({ type: "", message: "" });
   const [isSendingRequest, setIsSendingRequest] = useState(false);
+  const [locatingAddress, setLocatingAddress] = useState("");
   const serviceOptions = DEPOSIT_PRICE_OPTIONS;
   const isClientSuspended = clientProfile?.status === "suspended";
   const selectedOptionPrices = getOptionPrices(clientArticlePrices, serviceType);
@@ -3052,6 +3234,11 @@ function ClientPortal({
   }));
   const selectedArticle = clientPricedArticles.find((article) => article.id === articleId) || clientPricedArticles[0];
   const estimatedTotal = items.reduce((sum, item) => sum + item.total, 0);
+
+  function selectClientView(viewId) {
+    setActiveClientView(viewId);
+    setIsClientMenuOpen(false);
+  }
 
   function addRequestItem() {
     const itemQuantity = Math.max(1, Number(quantity.replace(/\D/g, "")) || 1);
@@ -3068,6 +3255,57 @@ function ClientPortal({
       }
     ]);
     setQuantity("1");
+  }
+
+  function setGpsAddress(addressType, coordinates) {
+    const latitude = coordinates.latitude.toFixed(6);
+    const longitude = coordinates.longitude.toFixed(6);
+    const gpsAddress = `Position GPS: ${latitude}, ${longitude} - https://www.google.com/maps?q=${latitude},${longitude}`;
+
+    if (addressType === "collection") {
+      setCollectionAddress(gpsAddress);
+      return;
+    }
+
+    setDeliveryAddress(gpsAddress);
+  }
+
+  function useCurrentPositionForAddress(addressType) {
+    setRequestStatus({ type: "", message: "" });
+
+    if (!navigator.geolocation) {
+      setRequestStatus({
+        type: "error",
+        message: "La geolocalisation n'est pas disponible sur cet appareil."
+      });
+      return;
+    }
+
+    setLocatingAddress(addressType);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setGpsAddress(addressType, position.coords);
+        setLocatingAddress("");
+        setRequestStatus({
+          type: "success",
+          message: addressType === "collection"
+            ? "Position GPS ajoutee comme adresse de collecte."
+            : "Position GPS ajoutee comme adresse de livraison."
+        });
+      },
+      () => {
+        setLocatingAddress("");
+        setRequestStatus({
+          type: "error",
+          message: "Position GPS impossible a recuperer. Verifiez l'autorisation du navigateur."
+        });
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 60000,
+        timeout: 12000
+      }
+    );
   }
 
   async function submitClientRequest(event) {
@@ -3118,11 +3356,47 @@ function ClientPortal({
           <h1>Espace client</h1>
           <p>{clientProfile?.fullName || "Client"}</p>
         </div>
-        <button className="logout-button" type="button" onClick={onLogout}>
-          Deconnexion
-        </button>
+        <div className="client-portal-header-actions">
+          <button
+            aria-expanded={isClientMenuOpen}
+            className="mobile-menu-button client-menu-toggle"
+            type="button"
+            onClick={() => setIsClientMenuOpen((current) => !current)}
+          >
+            {isClientMenuOpen ? "Fermer" : "Menu"}
+          </button>
+          <button className="logout-button" type="button" onClick={onLogout}>
+            Deconnexion
+          </button>
+        </div>
       </header>
 
+      {isClientMenuOpen && (
+        <button
+          aria-label="Fermer le menu client"
+          className="workspace-menu-backdrop client-menu-backdrop"
+          type="button"
+          onClick={() => setIsClientMenuOpen(false)}
+        />
+      )}
+
+      <nav
+        className={isClientMenuOpen ? "client-portal-nav open" : "client-portal-nav"}
+        aria-label="Menu client"
+      >
+        {CLIENT_PORTAL_MENU.map((item) => (
+          <button
+            className={activeClientView === item.id ? "workspace-nav-item active" : "workspace-nav-item"}
+            key={item.id}
+            type="button"
+            onClick={() => selectClientView(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
+      {activeClientView === "prices" && (
       <section className="report-section" aria-label="Tarifs client">
         <div className="section-heading">
           <div>
@@ -3158,7 +3432,9 @@ function ClientPortal({
           ))}
         </div>
       </section>
+      )}
 
+      {activeClientView === "request" && (
       <section className="report-section" aria-label="Nouvelle demande">
         <div className="section-heading">
           <div>
@@ -3197,22 +3473,42 @@ function ClientPortal({
             Ajouter
           </button>
 
-          <label className="wide-field">
-            Adresse de collecte
-            <input
-              value={collectionAddress}
-              onChange={(event) => setCollectionAddress(event.target.value)}
-              placeholder="Quartier, rue, repere"
-            />
-          </label>
-          <label className="wide-field">
-            Adresse de livraison
-            <input
-              value={deliveryAddress}
-              onChange={(event) => setDeliveryAddress(event.target.value)}
-              placeholder="Laisser vide si identique a la collecte"
-            />
-          </label>
+          <div className="wide-field address-field">
+            <label htmlFor="collection-address">Adresse de collecte</label>
+            <div className="address-input-row">
+              <input
+                id="collection-address"
+                value={collectionAddress}
+                onChange={(event) => setCollectionAddress(event.target.value)}
+                placeholder="Quartier, rue, repere"
+              />
+              <button
+                type="button"
+                disabled={locatingAddress === "collection"}
+                onClick={() => useCurrentPositionForAddress("collection")}
+              >
+                {locatingAddress === "collection" ? "Localisation..." : "Utiliser ma position"}
+              </button>
+            </div>
+          </div>
+          <div className="wide-field address-field">
+            <label htmlFor="delivery-address">Adresse de livraison</label>
+            <div className="address-input-row">
+              <input
+                id="delivery-address"
+                value={deliveryAddress}
+                onChange={(event) => setDeliveryAddress(event.target.value)}
+                placeholder="Laisser vide si identique a la collecte"
+              />
+              <button
+                type="button"
+                disabled={locatingAddress === "delivery"}
+                onClick={() => useCurrentPositionForAddress("delivery")}
+              >
+                {locatingAddress === "delivery" ? "Localisation..." : "Utiliser ma position"}
+              </button>
+            </div>
+          </div>
           <label>
             Date souhaitee
             <input
@@ -3259,7 +3555,9 @@ function ClientPortal({
           )}
         </div>
       </section>
+      )}
 
+      {activeClientView === "history" && (
       <section className="report-section" aria-label="Demandes client">
         <div className="section-heading">
           <div>
@@ -3289,6 +3587,45 @@ function ClientPortal({
           )}
         </div>
       </section>
+      )}
+
+      {activeClientView === "account" && (
+        <div className="workspace-stack">
+          <section className="report-section" aria-label="Informations client">
+            <div className="section-heading">
+              <div>
+                <h2>Informations client</h2>
+                <p>Coordonnees rattachees a votre compte.</p>
+              </div>
+            </div>
+
+            <div className="settings-grid">
+              <article className="report-card">
+                <span>Nom</span>
+                <strong>{clientProfile?.fullName || "-"}</strong>
+              </article>
+              <article className="report-card">
+                <span>Telephone</span>
+                <strong>{clientProfile?.phone || "-"}</strong>
+              </article>
+              <article className="report-card">
+                <span>Email</span>
+                <strong>{clientProfile?.email || "-"}</strong>
+              </article>
+              <article className="report-card">
+                <span>Statut</span>
+                <strong>{clientProfile?.status || "active"}</strong>
+              </article>
+            </div>
+          </section>
+
+          <AccountProfilePanel
+            displayName={clientProfile?.fullName}
+            email={clientProfile?.email}
+            phone={clientProfile?.phone}
+          />
+        </div>
+      )}
     </main>
   );
 }
