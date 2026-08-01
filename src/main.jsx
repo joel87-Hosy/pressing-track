@@ -122,6 +122,20 @@ function getSessionPressingName(session) {
   return session?.user.app_metadata?.pressing_name || session?.user.user_metadata?.pressing_name || "PressingTrack";
 }
 
+function getInitials(name, fallback = "CL") {
+  const parts = String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  if (parts.length === 0) {
+    return fallback;
+  }
+
+  return parts.map((part) => part[0]).join("").toUpperCase();
+}
+
 function formatMoney(amount) {
   return new Intl.NumberFormat("fr-FR").format(amount) + " FCFA";
 }
@@ -3195,6 +3209,186 @@ function TicketReadModal({ order, onClose }) {
   );
 }
 
+function ClientDashboard({ clientProfile, clientRequests, pressingName }) {
+  const [dashboardAvatarUrl, setDashboardAvatarUrl] = useState("");
+  const dashboardRows = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() - (6 - index));
+      const key = date.toISOString().slice(0, 10);
+      const requests = clientRequests.filter((request) => request.createdAt?.slice(0, 10) === key);
+
+      return {
+        key,
+        label: new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(date),
+        requests: requests.length,
+        total: requests.reduce((sum, request) => sum + request.estimatedTotal, 0)
+      };
+    });
+  }, [clientRequests]);
+  const statusCounts = clientRequests.reduce((counts, request) => {
+    counts[request.status] = (counts[request.status] || 0) + 1;
+    return counts;
+  }, {});
+  const activeRequests = clientRequests.filter((request) =>
+    ["submitted", "accepted", "awaiting_deposit", "deposit_confirmed", "in_processing", "ready"].includes(request.status)
+  );
+  const completedRequests = clientRequests.filter((request) => request.status === "completed");
+  const totalSpent = clientRequests.reduce((sum, request) => sum + request.estimatedTotal, 0);
+  const pendingTotal = activeRequests.reduce((sum, request) => sum + request.estimatedTotal, 0);
+  const lastRequest = clientRequests[0];
+  const maxRequests = Math.max(1, ...dashboardRows.map((row) => row.requests));
+  const linePoints = dashboardRows
+    .map((row, index) => {
+      const x = 24 + index * 56;
+      const y = 116 - (row.requests / maxRequests) * 84;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  const clientInitials = getInitials(clientProfile?.fullName, "CL");
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    async function loadDashboardAvatar() {
+      const { data } = await supabase.auth.getUser();
+      setDashboardAvatarUrl(data.user?.user_metadata?.avatar_url || "");
+    }
+
+    loadDashboardAvatar();
+  }, []);
+
+  return (
+    <div className="workspace-stack">
+      <section className="report-section" aria-label="Tableau de bord client">
+        <div className="section-heading">
+          <div>
+            <h2>Tableau de bord</h2>
+            <p>{pressingName} - {clientProfile?.fullName || "Client"}</p>
+          </div>
+          <div className="client-dashboard-profile" aria-label="Profil client">
+            <div className="client-dashboard-avatar">
+              {dashboardAvatarUrl ? (
+                <img alt="Photo du client" src={dashboardAvatarUrl} />
+              ) : (
+                <span>{clientInitials}</span>
+              )}
+            </div>
+            <div>
+              <strong>{clientInitials}</strong>
+              <span>{clientProfile?.fullName || "Client"}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="report-grid">
+          <article className="report-card">
+            <span>Demandes totales</span>
+            <strong>{clientRequests.length}</strong>
+          </article>
+          <article className="report-card">
+            <span>En cours</span>
+            <strong>{activeRequests.length}</strong>
+          </article>
+          <article className="report-card">
+            <span>Terminees</span>
+            <strong>{completedRequests.length}</strong>
+          </article>
+          <article className="report-card">
+            <span>Derniere demande</span>
+            <strong>{formatDateOnly(lastRequest?.createdAt)}</strong>
+          </article>
+          <article className="report-card wide">
+            <span>Total estime</span>
+            <strong>{formatMoney(totalSpent)}</strong>
+          </article>
+          <article className="report-card wide">
+            <span>Montant en cours</span>
+            <strong>{formatMoney(pendingTotal)}</strong>
+          </article>
+        </div>
+      </section>
+
+      <section className="dashboard-charts client-dashboard-charts" aria-label="Graphiques client">
+        <article className="chart-panel wide-chart">
+          <div className="chart-heading">
+            <div>
+              <h2>Activite sur 7 jours</h2>
+              <p>Nombre de demandes envoyees par jour.</p>
+            </div>
+          </div>
+          <div className="client-line-chart">
+            <svg viewBox="0 0 384 140" role="img" aria-label="Courbe des demandes client">
+              <polyline className="client-line-grid" points="24,116 360,116" />
+              <polyline className="client-line-path" points={linePoints} />
+              {dashboardRows.map((row, index) => {
+                const x = 24 + index * 56;
+                const y = 116 - (row.requests / maxRequests) * 84;
+
+                return <circle className="client-line-dot" cx={x} cy={y} key={row.key} r="5" />;
+              })}
+            </svg>
+            <div className="client-line-labels">
+              {dashboardRows.map((row) => (
+                <span key={row.key}>
+                  <strong>{row.requests}</strong>
+                  <small>{row.label}</small>
+                </span>
+              ))}
+            </div>
+          </div>
+        </article>
+
+        <article className="chart-panel">
+          <div className="chart-heading">
+            <div>
+              <h2>Statuts</h2>
+              <p>Repartition de vos demandes.</p>
+            </div>
+          </div>
+          <div className="client-status-list">
+            {Object.keys(statusCounts).length === 0 ? (
+              <div className="empty-history">Aucune demande a analyser.</div>
+            ) : (
+              Object.entries(statusCounts).map(([status, count]) => (
+                <div key={status}>
+                  <span>{CLIENT_REQUEST_STATUS_LABELS[status] || status}</span>
+                  <strong>{count}</strong>
+                </div>
+              ))
+            )}
+          </div>
+        </article>
+
+        <article className="chart-panel">
+          <div className="chart-heading">
+            <div>
+              <h2>Derniere activite</h2>
+              <p>Resume de la demande la plus recente.</p>
+            </div>
+          </div>
+          {lastRequest ? (
+            <div className="client-dashboard-detail">
+              <strong>{getPriceOptionLabel(lastRequest.serviceType)}</strong>
+              <span>{CLIENT_REQUEST_STATUS_LABELS[lastRequest.status] || lastRequest.status}</span>
+              <span>{lastRequest.items.length} ligne(s)</span>
+              <span>{formatDateTime(lastRequest.createdAt)}</span>
+              <strong>{formatMoney(lastRequest.estimatedTotal)}</strong>
+            </div>
+          ) : (
+            <div className="empty-history">Aucune demande envoyee pour le moment.</div>
+          )}
+        </article>
+      </section>
+    </div>
+  );
+}
+
 function ClientPortal({
   clientArticlePrices,
   clientProfile,
@@ -3204,12 +3398,13 @@ function ClientPortal({
   pressingName
 }) {
   const CLIENT_PORTAL_MENU = [
+    { id: "dashboard", label: "Tableau de bord" },
     { id: "prices", label: "Tarifs" },
     { id: "request", label: "Nouvelle demande" },
     { id: "history", label: "Mes demandes" },
     { id: "account", label: "Mon profil" }
   ];
-  const [activeClientView, setActiveClientView] = useState("prices");
+  const [activeClientView, setActiveClientView] = useState("dashboard");
   const [isClientMenuOpen, setIsClientMenuOpen] = useState(false);
   const [serviceType, setServiceType] = useState(DEFAULT_PRICE_OPTION_ID);
   const [articleId, setArticleId] = useState(MOCK_ARTICLES[0].id);
@@ -3437,6 +3632,14 @@ function ClientPortal({
           </button>
         ))}
       </nav>
+
+      {activeClientView === "dashboard" && (
+        <ClientDashboard
+          clientProfile={clientProfile}
+          clientRequests={clientRequests}
+          pressingName={pressingName}
+        />
+      )}
 
       {activeClientView === "prices" && (
       <section className="report-section" aria-label="Tarifs client">
