@@ -73,10 +73,23 @@ const STATUS_LABELS = {
   PICKED_UP: "Retire"
 };
 
+const CLIENT_REQUEST_STATUS_LABELS = {
+  submitted: "Envoyee",
+  accepted: "Acceptee",
+  refused: "Refusee",
+  awaiting_deposit: "En attente depot",
+  deposit_confirmed: "Depot confirme",
+  in_processing: "En traitement",
+  ready: "Pret retrait",
+  completed: "Terminee",
+  canceled: "Annulee"
+};
+
 const ROLE_LABELS = {
   admin: "Admin",
   supervisor: "Superviseur",
-  platform_admin: "Super Admin"
+  platform_admin: "Super Admin",
+  client: "Client"
 };
 
 function canAccessDashboard(role) {
@@ -91,12 +104,20 @@ function isPlatformAdminRole(role) {
   return role === "platform_admin";
 }
 
+function getSessionRole(session) {
+  return session?.user.app_metadata?.role || session?.user.user_metadata?.role || null;
+}
+
+function isClientRole(role) {
+  return role === "client";
+}
+
 function getSessionPressingId(session) {
-  return session?.user.app_metadata?.pressing_id || null;
+  return session?.user.app_metadata?.pressing_id || session?.user.user_metadata?.pressing_id || null;
 }
 
 function getSessionPressingName(session) {
-  return session?.user.app_metadata?.pressing_name || "PressingTrack";
+  return session?.user.app_metadata?.pressing_name || session?.user.user_metadata?.pressing_name || "PressingTrack";
 }
 
 function formatMoney(amount) {
@@ -418,6 +439,7 @@ function DetailPills({ label, value, options, onChange }) {
 const ADMIN_MENU = [
   { id: "dashboard", label: "Tableau" },
   { id: "deposit", label: "Depot" },
+  { id: "clientRequests", label: "Demandes clients" },
   { id: "pickups", label: "Retraits" },
   { id: "stock", label: "Stock" },
   { id: "tickets", label: "Tickets" },
@@ -640,6 +662,71 @@ function fromDatabaseSupportTicket(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+}
+
+function fromDatabaseClientProfile(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    pressingId: row.pressing_id,
+    fullName: row.full_name,
+    email: row.email,
+    phone: row.phone,
+    createdAt: row.created_at
+  };
+}
+
+function fromDatabaseClientRequest(row) {
+  return {
+    id: row.id,
+    pressingId: row.pressing_id,
+    clientProfileId: row.client_profile_id,
+    clientUserId: row.client_user_id,
+    clientName: row.client_name,
+    clientEmail: row.client_email,
+    clientPhone: row.client_phone,
+    serviceType: row.service_type,
+    deliveryMode: row.delivery_mode,
+    collectionAddress: row.collection_address,
+    deliveryAddress: row.delivery_address,
+    requestedDate: row.requested_date,
+    items: row.items || [],
+    note: row.note || "",
+    estimatedTotal: row.estimated_total || 0,
+    status: row.status || "submitted",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function toDatabaseClientRequest(request) {
+  return {
+    pressing_id: request.pressingId,
+    client_profile_id: request.clientProfileId,
+    client_user_id: request.clientUserId,
+    client_name: request.clientName,
+    client_email: request.clientEmail,
+    client_phone: request.clientPhone,
+    service_type: request.serviceType,
+    delivery_mode: request.deliveryMode,
+    collection_address: request.collectionAddress,
+    delivery_address: request.deliveryAddress,
+    requested_date: request.requestedDate || null,
+    items: request.items,
+    note: request.note,
+    estimated_total: request.estimatedTotal,
+    status: request.status,
+    updated_at: new Date().toISOString()
+  };
+}
+
+function getClientPortalLink(pressingId, pressingName) {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("client_pressing", pressingId);
+  url.searchParams.set("pressing_name", pressingName);
+  return url.toString();
 }
 
 function fromDatabasePlatformUser(row) {
@@ -2283,6 +2370,7 @@ function StockView({ orderHistory }) {
 
 function SettingsView({
   onCreateSupportTicket,
+  clientPortalLink,
   pressingAnnouncements = [],
   pressingName,
   pressingSupportTickets = [],
@@ -2443,6 +2531,26 @@ function SettingsView({
           </button>
         </form>
       </section>
+
+      {clientPortalLink && (
+        <section className="report-section" aria-label="Lien client">
+          <div className="section-heading">
+            <div>
+              <h2>Lien client</h2>
+              <p>Envoyez ce lien aux clients pour qu'ils creent leur compte dans ce pressing.</p>
+            </div>
+          </div>
+          <div className="client-link-box">
+            <strong>{clientPortalLink}</strong>
+            <button
+              type="button"
+              onClick={() => navigator.clipboard?.writeText(clientPortalLink)}
+            >
+              Copier
+            </button>
+          </div>
+        </section>
+      )}
 
       {showTenantMessaging && (
         <>
@@ -2716,6 +2824,349 @@ function TicketReadModal({ order, onClose }) {
   );
 }
 
+function ClientPortal({
+  clientArticlePrices,
+  clientProfile,
+  clientRequests,
+  onCreateClientRequest,
+  onLogout,
+  pressingName
+}) {
+  const [serviceType, setServiceType] = useState(DEFAULT_PRICE_OPTION_ID);
+  const [articleId, setArticleId] = useState(MOCK_ARTICLES[0].id);
+  const [quantity, setQuantity] = useState("1");
+  const [items, setItems] = useState([]);
+  const [collectionAddress, setCollectionAddress] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [requestedDate, setRequestedDate] = useState("");
+  const [note, setNote] = useState("");
+  const [requestStatus, setRequestStatus] = useState({ type: "", message: "" });
+  const [isSendingRequest, setIsSendingRequest] = useState(false);
+  const serviceOptions = DEPOSIT_PRICE_OPTIONS;
+  const selectedOptionPrices = getOptionPrices(clientArticlePrices, serviceType);
+  const clientPricedArticles = MOCK_ARTICLES.map((article) => ({
+    ...article,
+    price:
+      serviceType === DEFAULT_PRICE_OPTION_ID
+        ? getOptionPrices(clientArticlePrices, DEFAULT_PRICE_OPTION_ID)[article.id] ?? article.price
+        : selectedOptionPrices[article.id] ?? 0
+  }));
+  const selectedArticle = clientPricedArticles.find((article) => article.id === articleId) || clientPricedArticles[0];
+  const estimatedTotal = items.reduce((sum, item) => sum + item.total, 0);
+
+  function addRequestItem() {
+    const itemQuantity = Math.max(1, Number(quantity.replace(/\D/g, "")) || 1);
+
+    setItems((current) => [
+      ...current,
+      {
+        lineId: crypto.randomUUID(),
+        articleId: selectedArticle.id,
+        name: selectedArticle.name,
+        quantity: itemQuantity,
+        unitPrice: selectedArticle.price,
+        total: selectedArticle.price * itemQuantity
+      }
+    ]);
+    setQuantity("1");
+  }
+
+  async function submitClientRequest(event) {
+    event.preventDefault();
+    setRequestStatus({ type: "", message: "" });
+
+    if (items.length === 0) {
+      setRequestStatus({ type: "error", message: "Ajoutez au moins un vetement." });
+      return;
+    }
+
+    if (collectionAddress.trim().length < 5) {
+      setRequestStatus({ type: "error", message: "Saisissez l'adresse de collecte." });
+      return;
+    }
+
+    setIsSendingRequest(true);
+    const result = await onCreateClientRequest({
+      serviceType,
+      deliveryMode: "pickup_and_delivery",
+      collectionAddress: collectionAddress.trim(),
+      deliveryAddress: deliveryAddress.trim() || collectionAddress.trim(),
+      requestedDate,
+      items,
+      note: note.trim(),
+      estimatedTotal
+    });
+    setIsSendingRequest(false);
+
+    if (!result.ok) {
+      setRequestStatus({ type: "error", message: result.message });
+      return;
+    }
+
+    setItems([]);
+    setCollectionAddress("");
+    setDeliveryAddress("");
+    setRequestedDate("");
+    setNote("");
+    setRequestStatus({ type: "success", message: "Demande envoyee au gerant du pressing." });
+  }
+
+  return (
+    <main className="client-portal-shell">
+      <header className="client-portal-header">
+        <div>
+          <p className="eyebrow">{pressingName}</p>
+          <h1>Espace client</h1>
+          <p>{clientProfile?.fullName || "Client"}</p>
+        </div>
+        <button className="logout-button" type="button" onClick={onLogout}>
+          Deconnexion
+        </button>
+      </header>
+
+      <section className="report-section" aria-label="Tarifs client">
+        <div className="section-heading">
+          <div>
+            <h2>Tarifs lavage</h2>
+            <p>Choisissez le type de lavage avant de declarer vos vetements.</p>
+          </div>
+        </div>
+
+        <div className="price-service-tabs" role="tablist" aria-label="Types de lavage">
+          {serviceOptions.map((option) => (
+            <button
+              className={serviceType === option.id ? "price-service-tab active" : "price-service-tab"}
+              key={option.id}
+              type="button"
+              onClick={() => setServiceType(option.id)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="article-preview-list">
+          {clientPricedArticles.map((article) => (
+            <article className="article-preview-item" key={article.id}>
+              <span className="mini-icon" aria-hidden="true">
+                {article.icon}
+              </span>
+              <div>
+                <strong>{article.name}</strong>
+                <small>{formatMoney(article.price)}</small>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="report-section" aria-label="Nouvelle demande">
+        <div className="section-heading">
+          <div>
+            <h2>Nouvelle demande</h2>
+            <p>Ramassage et livraison a domicile.</p>
+          </div>
+          <strong>{formatMoney(estimatedTotal)}</strong>
+        </div>
+
+        <form className="platform-form" onSubmit={submitClientRequest}>
+          <label>
+            Vetement
+            <select value={articleId} onChange={(event) => setArticleId(event.target.value)}>
+              {clientPricedArticles.map((article) => (
+                <option key={article.id} value={article.id}>
+                  {article.name} - {formatMoney(article.price)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Quantite
+            <input
+              inputMode="numeric"
+              value={quantity}
+              onChange={(event) => setQuantity(event.target.value.replace(/\D/g, ""))}
+            />
+          </label>
+          <button type="button" onClick={addRequestItem}>
+            Ajouter
+          </button>
+
+          <label className="wide-field">
+            Adresse de collecte
+            <input
+              value={collectionAddress}
+              onChange={(event) => setCollectionAddress(event.target.value)}
+              placeholder="Quartier, rue, repere"
+            />
+          </label>
+          <label className="wide-field">
+            Adresse de livraison
+            <input
+              value={deliveryAddress}
+              onChange={(event) => setDeliveryAddress(event.target.value)}
+              placeholder="Laisser vide si identique a la collecte"
+            />
+          </label>
+          <label>
+            Date souhaitee
+            <input
+              type="date"
+              value={requestedDate}
+              onChange={(event) => setRequestedDate(event.target.value)}
+            />
+          </label>
+          <label className="wide-field">
+            Note
+            <textarea
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="Taches, instructions, urgence..."
+            />
+          </label>
+
+          {requestStatus.message && (
+            <div className={`password-status ${requestStatus.type}`}>{requestStatus.message}</div>
+          )}
+
+          <button type="submit" disabled={isSendingRequest}>
+            {isSendingRequest ? "Envoi..." : "Envoyer la demande"}
+          </button>
+        </form>
+
+        <div className="client-list">
+          {items.length === 0 ? (
+            <div className="empty-history">Aucun vetement ajoute.</div>
+          ) : (
+            items.map((item) => (
+              <article className="client-item" key={item.lineId}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <span>{getPriceOptionLabel(serviceType)}</span>
+                </div>
+                <div>
+                  <span>Quantite: {item.quantity}</span>
+                  <span>Prix unitaire: {formatMoney(item.unitPrice)}</span>
+                </div>
+                <strong>{formatMoney(item.total)}</strong>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="report-section" aria-label="Demandes client">
+        <div className="section-heading">
+          <div>
+            <h2>Mes demandes</h2>
+            <p>Suivi des demandes envoyees au pressing.</p>
+          </div>
+          <strong>{clientRequests.length}</strong>
+        </div>
+
+        <div className="client-list">
+          {clientRequests.length === 0 ? (
+            <div className="empty-history">Aucune demande envoyee.</div>
+          ) : (
+            clientRequests.map((request) => (
+              <article className="client-item" key={request.id}>
+                <div>
+                  <strong>{getPriceOptionLabel(request.serviceType)}</strong>
+                  <span>{request.items.length} ligne(s) - {formatDateTime(request.createdAt)}</span>
+                </div>
+                <div>
+                  <span>{request.collectionAddress}</span>
+                  <span>{CLIENT_REQUEST_STATUS_LABELS[request.status] || request.status}</span>
+                </div>
+                <strong>{formatMoney(request.estimatedTotal)}</strong>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ClientRequestsView({ clientRequests, onUpdateClientRequestStatus }) {
+  return (
+    <section className="report-section" aria-label="Demandes clients">
+      <div className="section-heading">
+        <div>
+          <h2>Demandes clients</h2>
+          <p>Demandes envoyees depuis le lien client du pressing.</p>
+        </div>
+        <strong>{clientRequests.length}</strong>
+      </div>
+
+      <div className="client-list">
+        {clientRequests.length === 0 ? (
+          <div className="empty-history">Aucune demande client recue.</div>
+        ) : (
+          clientRequests.map((request) => (
+            <article className="client-detail-ticket" key={request.id}>
+              <div className="client-detail-ticket-top">
+                <div>
+                  <strong>{request.clientName}</strong>
+                  <span>
+                    {request.clientPhone} - {request.clientEmail}
+                  </span>
+                </div>
+                <span className="status-badge status-in_processing">
+                  {CLIENT_REQUEST_STATUS_LABELS[request.status] || request.status}
+                </span>
+              </div>
+              <div className="client-detail-ticket-meta">
+                <span>{getPriceOptionLabel(request.serviceType)}</span>
+                <span>Collecte: {request.collectionAddress}</span>
+                <strong>{formatMoney(request.estimatedTotal)}</strong>
+              </div>
+              <div className="client-detail-items">
+                {request.items.map((item) => (
+                  <span key={item.lineId || item.articleId}>
+                    {item.name} x{item.quantity}
+                  </span>
+                ))}
+              </div>
+              {request.note && <p>{request.note}</p>}
+              <div className="history-actions">
+                <button
+                  className="picked-up-button"
+                  type="button"
+                  onClick={() => onUpdateClientRequestStatus(request.id, "accepted")}
+                >
+                  Accepter
+                </button>
+                <button
+                  className="back-button compact-button"
+                  type="button"
+                  onClick={() => onUpdateClientRequestStatus(request.id, "awaiting_deposit")}
+                >
+                  Attente depot
+                </button>
+                <button
+                  className="back-button compact-button"
+                  type="button"
+                  onClick={() => onUpdateClientRequestStatus(request.id, "deposit_confirmed")}
+                >
+                  Depot confirme
+                </button>
+                <button
+                  className="delete-ticket-button"
+                  type="button"
+                  onClick={() => onUpdateClientRequestStatus(request.id, "refused")}
+                >
+                  Refuser
+                </button>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
 function SupervisorDashboard({
   onCreateSupportTicket,
   databaseError,
@@ -2723,6 +3174,7 @@ function SupervisorDashboard({
   onLogout,
   orderHistory,
   pressingAnnouncements,
+  pressingId,
   pressingName,
   pressingSupportTickets,
   role,
@@ -2771,6 +3223,9 @@ function SupervisorDashboard({
 
       {activeView === "settings" && (
         <SettingsView
+          clientPortalLink={
+            pressingId ? getClientPortalLink(pressingId, pressingName) : ""
+          }
           onCreateSupportTicket={onCreateSupportTicket}
           pressingAnnouncements={pressingAnnouncements}
           pressingName={pressingName}
@@ -2785,11 +3240,15 @@ function SupervisorDashboard({
   );
 }
 
-function LoginPage({ onLogin }) {
+function LoginPage({ clientInvitePressingId, clientInvitePressingName, onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [clientName, setClientName] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
+  const [isClientSignup, setIsClientSignup] = useState(Boolean(clientInvitePressingId));
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isClientInvite = Boolean(clientInvitePressingId);
 
   async function submitLogin(event) {
     event.preventDefault();
@@ -2812,8 +3271,13 @@ function LoginPage({ onLogin }) {
       return;
     }
 
-    const role = data.session.user.app_metadata?.role;
+    const role = getSessionRole(data.session);
     const hasScope = Boolean(getSessionPressingId(data.session)) || isPlatformAdminRole(role);
+
+    if (isClientRole(role)) {
+      onLogin(data.session);
+      return;
+    }
 
     if (!canAccessDashboard(role) || !hasScope) {
       await supabase.auth.signOut();
@@ -2824,16 +3288,126 @@ function LoginPage({ onLogin }) {
     onLogin(data.session);
   }
 
+  async function submitClientSignup(event) {
+    event.preventDefault();
+    setError("");
+
+    if (!isSupabaseConfigured) {
+      setError("Supabase doit etre configure pour creer un compte client.");
+      return;
+    }
+
+    if (!clientInvitePressingId) {
+      setError("Lien client invalide: aucun pressing n'est associe.");
+      return;
+    }
+
+    if (clientName.trim().length < 2 || clientPhone.trim().length < 6) {
+      setError("Saisissez votre nom et votre numero de telephone.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    const { data, error: signupError } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: {
+        data: {
+          role: "client",
+          full_name: clientName.trim(),
+          phone: clientPhone.trim(),
+          pressing_id: clientInvitePressingId,
+          pressing_name: clientInvitePressingName
+        }
+      }
+    });
+    setIsSubmitting(false);
+
+    if (signupError) {
+      setError("Creation impossible. Verifiez l'email ou le mot de passe.");
+      return;
+    }
+
+    if (data.session) {
+      onLogin(data.session);
+      return;
+    }
+
+    setError("Compte cree. Verifiez votre email puis reconnectez-vous.");
+    setIsClientSignup(false);
+  }
+
   return (
     <main className="login-shell">
       <section className="login-panel" aria-label="Connexion administrateur ou superviseur">
         <div>
-          <p className="eyebrow">PressingTrack</p>
-          <h1>Connexion</h1>
-          <p className="login-copy">Acces reserve au comptoir, aux rapports et a l'historique.</p>
+          <p className="eyebrow">{isClientInvite ? clientInvitePressingName : "PressingTrack"}</p>
+          <h1>{isClientInvite ? "Espace client" : "Connexion"}</h1>
+          <p className="login-copy">
+            {isClientInvite
+              ? "Creez votre compte pour envoyer une demande de lavage au pressing."
+              : "Acces reserve au comptoir, aux rapports et a l'historique."}
+          </p>
         </div>
 
-        <form className="login-form" onSubmit={submitLogin}>
+        {isClientInvite && (
+          <div className="price-service-tabs" role="tablist" aria-label="Mode client">
+            <button
+              className={isClientSignup ? "price-service-tab active" : "price-service-tab"}
+              type="button"
+              onClick={() => {
+                setIsClientSignup(true);
+                setError("");
+              }}
+            >
+              Creer compte
+            </button>
+            <button
+              className={!isClientSignup ? "price-service-tab active" : "price-service-tab"}
+              type="button"
+              onClick={() => {
+                setIsClientSignup(false);
+                setError("");
+              }}
+            >
+              Connexion
+            </button>
+          </div>
+        )}
+
+        <form className="login-form" onSubmit={isClientSignup ? submitClientSignup : submitLogin}>
+          {isClientSignup && (
+            <>
+              <label htmlFor="client-name">
+                Nom complet
+                <input
+                  id="client-name"
+                  autoComplete="name"
+                  value={clientName}
+                  onChange={(event) => {
+                    setClientName(event.target.value);
+                    setError("");
+                  }}
+                  placeholder="Votre nom"
+                />
+              </label>
+
+              <label htmlFor="client-phone">
+                Numero de telephone
+                <input
+                  id="client-phone"
+                  autoComplete="tel"
+                  value={clientPhone}
+                  onChange={(event) => {
+                    setClientPhone(event.target.value);
+                    setError("");
+                  }}
+                  placeholder="Ex: 0700000000"
+                />
+              </label>
+            </>
+          )}
+
           <label htmlFor="admin-email">
             Email
             <input
@@ -2867,7 +3441,7 @@ function LoginPage({ onLogin }) {
           {error && <div className="login-error">{error}</div>}
 
           <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Connexion..." : "Se connecter"}
+            {isSubmitting ? "Patientez..." : isClientSignup ? "Creer mon compte" : "Se connecter"}
           </button>
         </form>
       </section>
@@ -2904,17 +3478,25 @@ function App() {
   const [platformSupportTickets, setPlatformSupportTickets] = useState([]);
   const [pressingAnnouncements, setPressingAnnouncements] = useState([]);
   const [pressingSupportTickets, setPressingSupportTickets] = useState([]);
+  const [clientProfile, setClientProfile] = useState(null);
+  const [clientRequests, setClientRequests] = useState([]);
+  const [pressingClientRequests, setPressingClientRequests] = useState([]);
+  const [clientArticlePrices, setClientArticlePrices] = useState(createEmptyPriceOptions);
   const [platformLoading, setPlatformLoading] = useState(false);
   const [pickupQuery, setPickupQuery] = useState("");
   const [selectedPickupOrder, setSelectedPickupOrder] = useState(null);
   const [selectedReportOrder, setSelectedReportOrder] = useState(null);
   const [activeAdminView, setActiveAdminView] = useState("deposit");
-  const currentRole = adminSession?.user.app_metadata?.role;
+  const currentRole = getSessionRole(adminSession);
   const currentPressingId = getSessionPressingId(adminSession);
   const currentPressingName = getSessionPressingName(adminSession);
   const isAdmin = isAdminRole(currentRole);
   const isPlatformAdmin = isPlatformAdminRole(currentRole);
+  const isClient = isClientRole(currentRole);
   const hasPressingScope = Boolean(currentPressingId) || isPlatformAdmin;
+  const clientInvitePressingId = new URLSearchParams(window.location.search).get("client_pressing");
+  const clientInvitePressingName =
+    new URLSearchParams(window.location.search).get("pressing_name") || "Votre pressing";
 
   const total = useMemo(
     () => ticketItems.reduce((sum, item) => sum + item.price, 0),
@@ -3035,23 +3617,23 @@ function App() {
     async function loadSession() {
       const { data } = await supabase.auth.getSession();
       const session = data.session;
-      const role = session?.user.app_metadata?.role;
+      const role = getSessionRole(session);
       const hasScope = Boolean(getSessionPressingId(session)) || isPlatformAdminRole(role);
 
       if (!isMounted) {
         return;
       }
 
-      setAdminSession(canAccessDashboard(role) && hasScope ? session : null);
+      setAdminSession((canAccessDashboard(role) && hasScope) || isClientRole(role) ? session : null);
       setAuthLoading(false);
     }
 
     const {
       data: { subscription }
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      const role = session?.user.app_metadata?.role;
+      const role = getSessionRole(session);
       const hasScope = Boolean(getSessionPressingId(session)) || isPlatformAdminRole(role);
-      setAdminSession(canAccessDashboard(role) && hasScope ? session : null);
+      setAdminSession((canAccessDashboard(role) && hasScope) || isClientRole(role) ? session : null);
       setAuthLoading(false);
     });
 
@@ -3064,7 +3646,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !adminSession || !hasPressingScope) {
+    if (!isSupabaseConfigured || !adminSession || !hasPressingScope || isClientRole(currentRole)) {
       setHistoryLoading(false);
       return;
     }
@@ -3096,7 +3678,110 @@ function App() {
     }
 
     loadTickets();
-  }, [adminSession, currentPressingId, hasPressingScope]);
+  }, [adminSession, currentPressingId, currentRole, hasPressingScope]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !adminSession || !currentPressingId || !isAdmin) {
+      setPressingClientRequests([]);
+      return;
+    }
+
+    async function loadPressingClientRequests() {
+      const { data, error } = await supabase
+        .from("client_service_requests")
+        .select("*")
+        .eq("pressing_id", currentPressingId)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        setDatabaseError("Lecture des demandes clients impossible.");
+        return;
+      }
+
+      setPressingClientRequests(data.map(fromDatabaseClientRequest));
+    }
+
+    loadPressingClientRequests();
+  }, [adminSession, currentPressingId, isAdmin]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !adminSession || !isClientRole(currentRole)) {
+      setClientProfile(null);
+      setClientRequests([]);
+      return;
+    }
+
+    async function loadClientPortalData() {
+      const { data: profilesData, error: profileError } = await supabase
+        .from("client_profiles")
+        .select("*")
+        .eq("user_id", adminSession.user.id)
+        .limit(1);
+
+      if (profileError) {
+        setDatabaseError("Lecture du profil client impossible.");
+        return;
+      }
+
+      let profile = profilesData[0] ? fromDatabaseClientProfile(profilesData[0]) : null;
+      const metadataPressingId = getSessionPressingId(adminSession);
+
+      if (!profile && metadataPressingId) {
+        const row = {
+          user_id: adminSession.user.id,
+          pressing_id: metadataPressingId,
+          full_name: adminSession.user.user_metadata?.full_name || "Client",
+          email: adminSession.user.email,
+          phone: adminSession.user.user_metadata?.phone || ""
+        };
+        const { data: insertedProfile, error: insertError } = await supabase
+          .from("client_profiles")
+          .insert(row)
+          .select("*")
+          .single();
+
+        if (insertError) {
+          setDatabaseError("Creation du profil client impossible.");
+          return;
+        }
+
+        profile = fromDatabaseClientProfile(insertedProfile);
+      }
+
+      if (!profile) {
+        setDatabaseError("Ce compte client n'est associe a aucun pressing.");
+        return;
+      }
+
+      setClientProfile(profile);
+
+      const [{ data: requestsData, error: requestsError }, { data: pricesData, error: pricesError }] =
+        await Promise.all([
+          supabase
+            .from("client_service_requests")
+            .select("*")
+            .eq("client_user_id", adminSession.user.id)
+            .order("created_at", { ascending: false }),
+          supabase.from("article_prices").select("*").eq("pressing_id", profile.pressingId)
+        ]);
+
+      if (requestsError || pricesError) {
+        setDatabaseError("Lecture des demandes ou tarifs client impossible.");
+        return;
+      }
+
+      const nextPrices = createEmptyPriceOptions();
+      pricesData.forEach((row) => {
+        const { priceOptionId, articleId } = parsePriceRowId(row.article_id);
+        nextPrices[priceOptionId][articleId] = row.price;
+      });
+
+      setClientRequests(requestsData.map(fromDatabaseClientRequest));
+      setClientArticlePrices(nextPrices);
+    }
+
+    loadClientPortalData();
+  }, [adminSession, currentRole]);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !adminSession || !isAdmin || !currentPressingId) {
@@ -3423,6 +4108,74 @@ function App() {
 
     if (error) {
       setDatabaseError("Mise a jour du support echouee dans Supabase.");
+      return;
+    }
+
+    setDatabaseError("");
+  }
+
+  async function createClientServiceRequest(requestInput) {
+    if (!clientProfile) {
+      return { ok: false, message: "Profil client introuvable." };
+    }
+
+    const request = {
+      ...requestInput,
+      pressingId: clientProfile.pressingId,
+      clientProfileId: clientProfile.id,
+      clientUserId: adminSession.user.id,
+      clientName: clientProfile.fullName,
+      clientEmail: clientProfile.email,
+      clientPhone: clientProfile.phone,
+      status: "submitted"
+    };
+
+    if (!isSupabaseConfigured) {
+      const localRequest = {
+        ...request,
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      setClientRequests((current) => [localRequest, ...current]);
+      return { ok: true };
+    }
+
+    const { data, error } = await supabase
+      .from("client_service_requests")
+      .insert(toDatabaseClientRequest(request))
+      .select("*")
+      .single();
+
+    if (error) {
+      setDatabaseError("Envoi de la demande client echoue dans Supabase.");
+      return { ok: false, message: "Envoi impossible dans Supabase." };
+    }
+
+    setClientRequests((current) => [fromDatabaseClientRequest(data), ...current]);
+    setDatabaseError("");
+    return { ok: true };
+  }
+
+  async function updateClientRequestStatus(requestId, status) {
+    setPressingClientRequests((current) =>
+      current.map((request) =>
+        request.id === requestId ? { ...request, status, updatedAt: new Date().toISOString() } : request
+      )
+    );
+
+    if (!isSupabaseConfigured || !currentPressingId) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("client_service_requests")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("pressing_id", currentPressingId)
+      .eq("id", requestId);
+
+    if (error) {
+      setDatabaseError("Mise a jour de la demande client echouee.");
       return;
     }
 
@@ -3951,6 +4704,9 @@ function App() {
     setPlatformSupportTickets([]);
     setPressingAnnouncements([]);
     setPressingSupportTickets([]);
+    setClientProfile(null);
+    setClientRequests([]);
+    setPressingClientRequests([]);
   }
 
   if (authLoading) {
@@ -3966,7 +4722,26 @@ function App() {
   }
 
   if (!adminSession) {
-    return <LoginPage onLogin={setAdminSession} />;
+    return (
+      <LoginPage
+        clientInvitePressingId={clientInvitePressingId}
+        clientInvitePressingName={clientInvitePressingName}
+        onLogin={setAdminSession}
+      />
+    );
+  }
+
+  if (isClient) {
+    return (
+      <ClientPortal
+        clientArticlePrices={clientArticlePrices}
+        clientProfile={clientProfile}
+        clientRequests={clientRequests}
+        onCreateClientRequest={createClientServiceRequest}
+        onLogout={logoutAdmin}
+        pressingName={getSessionPressingName(adminSession) || clientInvitePressingName}
+      />
+    );
   }
 
   if (isPlatformAdmin) {
@@ -4005,6 +4780,7 @@ function App() {
         onLogout={logoutAdmin}
         orderHistory={orderHistory}
         pressingAnnouncements={pressingAnnouncements}
+        pressingId={currentPressingId}
         pressingName={currentPressingName}
         pressingSupportTickets={pressingSupportTickets}
         role={currentRole}
@@ -4111,6 +4887,13 @@ function App() {
             onSelectOrder={setSelectedReportOrder}
             orderHistory={orderHistory}
             title="Tickets"
+          />
+        )}
+
+        {activeAdminView === "clientRequests" && (
+          <ClientRequestsView
+            clientRequests={pressingClientRequests}
+            onUpdateClientRequestStatus={updateClientRequestStatus}
           />
         )}
 
@@ -4244,6 +5027,9 @@ function App() {
 
         {activeAdminView === "settings" && (
           <SettingsView
+            clientPortalLink={
+              currentPressingId ? getClientPortalLink(currentPressingId, currentPressingName) : ""
+            }
             onCreateSupportTicket={createSupportTicket}
             pressingAnnouncements={pressingAnnouncements}
             pressingName={currentPressingName}

@@ -1702,6 +1702,66 @@ h2 {
   min-width: 0;
 }
 
+.client-portal-shell {
+  display: grid;
+  gap: 18px;
+  min-height: 100vh;
+  background: #eef4f8;
+  padding: 20px;
+}
+
+.client-portal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 22px;
+  box-shadow: 0 12px 30px rgba(16, 32, 51, 0.08);
+}
+
+.client-portal-header h1 {
+  font-size: clamp(2rem, 4vw, 3.2rem);
+}
+
+.client-portal-header p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: 1.05rem;
+  font-weight: 900;
+  margin-top: 6px;
+}
+
+.client-link-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 14px;
+}
+
+.client-link-box strong {
+  min-width: 0;
+  color: var(--blue-dark);
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.client-link-box button {
+  min-height: 48px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--blue);
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 1000;
+  padding: 10px 14px;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2747,6 +2807,14 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  .client-portal-shell {
+    padding: 14px;
+  }
+
+  .client-portal-header {
+    padding: 16px;
+  }
+
   .mobile-workspace-header {
     position: sticky;
     top: 0;
@@ -2994,6 +3062,17 @@ h2 {
 
   .workspace-sidebar {
     width: min(320px, 90vw);
+  }
+
+  .client-portal-header,
+  .client-link-box {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .client-link-box button {
+    width: 100%;
   }
 
   .workspace-account {

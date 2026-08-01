@@ -222,6 +222,38 @@ create table if not exists platform_activity_logs (
   created_at timestamptz not null default now()
 );
 
+create table if not exists client_profiles (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique,
+  pressing_id uuid not null references pressings(id),
+  full_name text not null,
+  email text not null,
+  phone text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists client_service_requests (
+  id uuid primary key default gen_random_uuid(),
+  pressing_id uuid not null references pressings(id),
+  client_profile_id uuid not null references client_profiles(id),
+  client_user_id uuid not null,
+  client_name text not null,
+  client_email text not null,
+  client_phone text not null,
+  service_type text not null,
+  delivery_mode text not null default 'pickup_and_delivery',
+  collection_address text not null,
+  delivery_address text,
+  requested_date date,
+  items jsonb not null default '[]'::jsonb,
+  note text,
+  estimated_total integer not null default 0,
+  status text not null default 'submitted',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists article_prices (
   pressing_id uuid references pressings(id),
   article_id text not null,
@@ -253,6 +285,10 @@ create index if not exists pressing_invoices_status_idx on pressing_invoices (st
 create index if not exists platform_notifications_pressing_idx on platform_notifications (pressing_id);
 create index if not exists platform_support_tickets_pressing_idx on platform_support_tickets (pressing_id);
 create index if not exists platform_activity_logs_created_idx on platform_activity_logs (created_at desc);
+create index if not exists client_profiles_user_idx on client_profiles (user_id);
+create index if not exists client_profiles_pressing_idx on client_profiles (pressing_id);
+create index if not exists client_service_requests_pressing_idx on client_service_requests (pressing_id, created_at desc);
+create index if not exists client_service_requests_client_idx on client_service_requests (client_user_id, created_at desc);
 
 grant select on platform_user_accounts to authenticated;
 grant select, insert, update, delete on pressing_invoices to authenticated;
@@ -261,6 +297,8 @@ grant select, insert, update, delete on platform_announcements to authenticated;
 grant select, insert, update, delete on platform_notifications to authenticated;
 grant select, insert, update, delete on platform_support_tickets to authenticated;
 grant select, insert, update, delete on platform_activity_logs to authenticated;
+grant select, insert, update on client_profiles to authenticated;
+grant select, insert, update on client_service_requests to authenticated;
 
 alter table pressings enable row level security;
 alter table tickets enable row level security;
@@ -271,6 +309,8 @@ alter table platform_announcements enable row level security;
 alter table platform_notifications enable row level security;
 alter table platform_support_tickets enable row level security;
 alter table platform_activity_logs enable row level security;
+alter table client_profiles enable row level security;
+alter table client_service_requests enable row level security;
 
 drop policy if exists "MVP public ticket read" on tickets;
 drop policy if exists "MVP public ticket insert" on tickets;
@@ -290,6 +330,7 @@ drop policy if exists "Tenant ticket update" on tickets;
 drop policy if exists "Tenant ticket delete" on tickets;
 drop policy if exists "Tenant article price read" on article_prices;
 drop policy if exists "Tenant article price write" on article_prices;
+drop policy if exists "Client article price read" on article_prices;
 drop policy if exists "Tenant pressing read" on pressings;
 drop policy if exists "Platform pressing write" on pressings;
 drop policy if exists "Platform invoice management" on pressing_invoices;
@@ -301,6 +342,12 @@ drop policy if exists "Tenant support read" on platform_support_tickets;
 drop policy if exists "Tenant support insert" on platform_support_tickets;
 drop policy if exists "Platform support management" on platform_support_tickets;
 drop policy if exists "Platform activity log management" on platform_activity_logs;
+drop policy if exists "Client profile read" on client_profiles;
+drop policy if exists "Client profile insert" on client_profiles;
+drop policy if exists "Client profile update" on client_profiles;
+drop policy if exists "Client request read" on client_service_requests;
+drop policy if exists "Client request insert" on client_service_requests;
+drop policy if exists "Tenant client request update" on client_service_requests;
 
 revoke all on function next_ticket_number() from public;
 revoke all on function next_ticket_number() from anon;
@@ -343,6 +390,18 @@ create policy "Tenant article price read"
 on article_prices for select
 to authenticated
 using (public.can_read_pressing(pressing_id));
+
+create policy "Client article price read"
+on article_prices for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.client_profiles
+    where client_profiles.user_id = auth.uid()
+      and client_profiles.pressing_id = article_prices.pressing_id
+  )
+);
 
 create policy "Tenant article price write"
 on article_prices for all
@@ -400,6 +459,44 @@ on platform_activity_logs for all
 to authenticated
 using (public.is_platform_admin())
 with check (public.is_platform_admin());
+
+create policy "Client profile read"
+on client_profiles for select
+to authenticated
+using (
+  user_id = auth.uid()
+  or public.can_read_pressing(pressing_id)
+);
+
+create policy "Client profile insert"
+on client_profiles for insert
+to authenticated
+with check (user_id = auth.uid());
+
+create policy "Client profile update"
+on client_profiles for update
+to authenticated
+using (user_id = auth.uid() or public.can_write_pressing(pressing_id))
+with check (user_id = auth.uid() or public.can_write_pressing(pressing_id));
+
+create policy "Client request read"
+on client_service_requests for select
+to authenticated
+using (
+  client_user_id = auth.uid()
+  or public.can_read_pressing(pressing_id)
+);
+
+create policy "Client request insert"
+on client_service_requests for insert
+to authenticated
+with check (client_user_id = auth.uid());
+
+create policy "Tenant client request update"
+on client_service_requests for update
+to authenticated
+using (public.can_write_pressing(pressing_id))
+with check (public.can_write_pressing(pressing_id));
 
 -- Creation d'un nouveau pressing client:
 -- 1. Executez cette requete en changeant le nom et l'email proprietaire.
