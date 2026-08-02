@@ -714,6 +714,11 @@ function fromDatabaseClientRequest(row) {
     note: row.note || "",
     estimatedTotal: row.estimated_total || 0,
     status: row.status || "submitted",
+    ticketId: row.ticket_id,
+    ticketNumber: row.ticket_number,
+    ticketMessage: row.ticket_message,
+    ticketWhatsappUrl: row.ticket_whatsapp_url,
+    ticketSentAt: row.ticket_sent_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -784,7 +789,16 @@ function getPlatformPressingRows(pressings, orderHistory, platformUsers) {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
-function AppShell({ activeView, children, menuItems, onLogout, onSelectView, pressingName, role }) {
+function AppShell({
+  activeView,
+  badgeCounts = {},
+  children,
+  menuItems,
+  onLogout,
+  onSelectView,
+  pressingName,
+  role
+}) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   function selectView(viewId) {
@@ -836,7 +850,10 @@ function AppShell({ activeView, children, menuItems, onLogout, onSelectView, pre
                 type="button"
                 onClick={() => selectView(item.id)}
               >
-                {item.label}
+                <span>{item.label}</span>
+                {badgeCounts[item.id] > 0 && (
+                  <strong className="nav-notification-badge">{badgeCounts[item.id]}</strong>
+                )}
               </button>
             )
           )}
@@ -3393,6 +3410,8 @@ function ClientPortal({
   clientArticlePrices,
   clientProfile,
   clientRequests,
+  historyBadgeCount = 0,
+  onOpenHistory,
   onCreateClientRequest,
   onLogout,
   pressingName
@@ -3449,6 +3468,10 @@ function ClientPortal({
   function selectClientView(viewId) {
     setActiveClientView(viewId);
     setIsClientMenuOpen(false);
+
+    if (viewId === "history") {
+      onOpenHistory?.();
+    }
   }
 
   function addRequestItem() {
@@ -3628,7 +3651,10 @@ function ClientPortal({
             type="button"
             onClick={() => selectClientView(item.id)}
           >
-            {item.label}
+            <span>{item.label}</span>
+            {item.id === "history" && historyBadgeCount > 0 && (
+              <strong className="nav-notification-badge">{historyBadgeCount}</strong>
+            )}
           </button>
         ))}
       </nav>
@@ -3873,6 +3899,15 @@ function ClientPortal({
                   <span>{CLIENT_REQUEST_STATUS_LABELS[request.status] || request.status}</span>
                 </div>
                 <strong>{formatMoney(request.estimatedTotal)}</strong>
+                {request.ticketSentAt && request.ticketMessage && (
+                  <div className="ticket-message-panel client-ticket-message">
+                    <div>
+                      <strong>Ticket {request.ticketNumber}</strong>
+                      <span>Recu le {formatDateTime(request.ticketSentAt)}</span>
+                    </div>
+                    <p>{request.ticketMessage}</p>
+                  </div>
+                )}
               </article>
             ))
           )}
@@ -3921,7 +3956,55 @@ function ClientPortal({
   );
 }
 
-function ClientRequestsView({ clientRequests, onUpdateClientRequestStatus }) {
+function ClientRequestsView({ clientRequests, onSendTicketToClient, onUpdateClientRequestStatus }) {
+  const [updatingRequestId, setUpdatingRequestId] = useState("");
+  const [statusMessage, setStatusMessage] = useState({ type: "", message: "" });
+
+  async function updateStatus(request, status) {
+    setUpdatingRequestId(request.id);
+    setStatusMessage({ type: "", message: "" });
+
+    const result = await onUpdateClientRequestStatus(request.id, status);
+    setUpdatingRequestId("");
+
+    if (!result?.ok) {
+      setStatusMessage({
+        type: "error",
+        message: result?.message || "Mise a jour impossible."
+      });
+      return;
+    }
+
+    setStatusMessage({
+      type: "success",
+      message:
+        status === "accepted" && result.ticketNumber
+          ? `${request.clientName}: demande acceptee et transformee en ticket ${result.ticketNumber}.`
+          : `${request.clientName}: statut passe a "${CLIENT_REQUEST_STATUS_LABELS[status] || status}".`
+    });
+  }
+
+  async function sendTicketToClient(request) {
+    setUpdatingRequestId(request.id);
+    setStatusMessage({ type: "", message: "" });
+
+    const result = await onSendTicketToClient(request.id);
+    setUpdatingRequestId("");
+
+    if (!result?.ok) {
+      setStatusMessage({
+        type: "error",
+        message: result?.message || "Envoi au compte client impossible."
+      });
+      return;
+    }
+
+    setStatusMessage({
+      type: "success",
+      message: `${request.clientName}: details du ticket envoyes dans son compte client.`
+    });
+  }
+
   return (
     <section className="report-section" aria-label="Demandes clients">
       <div className="section-heading">
@@ -3932,6 +4015,10 @@ function ClientRequestsView({ clientRequests, onUpdateClientRequestStatus }) {
         <strong>{clientRequests.length}</strong>
       </div>
 
+      {statusMessage.message && (
+        <div className={`password-status ${statusMessage.type}`}>{statusMessage.message}</div>
+      )}
+
       <div className="client-list">
         {clientRequests.length === 0 ? (
           <div className="empty-history">Aucune demande client recue.</div>
@@ -3941,11 +4028,12 @@ function ClientRequestsView({ clientRequests, onUpdateClientRequestStatus }) {
               <div className="client-detail-ticket-top">
                 <div>
                   <strong>{request.clientName}</strong>
-                  <span>
-                    {request.clientPhone} - {request.clientEmail}
-                  </span>
-                </div>
-                <span className="status-badge status-in_processing">
+                <span>
+                  {request.clientPhone} - {request.clientEmail}
+                </span>
+                <span>Mis a jour: {formatDateTime(request.updatedAt || request.createdAt)}</span>
+              </div>
+                <span className={`status-badge status-${request.status}`}>
                   {CLIENT_REQUEST_STATUS_LABELS[request.status] || request.status}
                 </span>
               </div>
@@ -3962,32 +4050,64 @@ function ClientRequestsView({ clientRequests, onUpdateClientRequestStatus }) {
                 ))}
               </div>
               {request.note && <p>{request.note}</p>}
+              {request.ticketNumber && (
+                <div className="ticket-message-panel">
+                  <div>
+                    <strong>Ticket {request.ticketNumber}</strong>
+                    <span>
+                      {request.ticketSentAt
+                        ? `Envoye au compte client le ${formatDateTime(request.ticketSentAt)}`
+                        : "Pas encore envoye au compte client"}
+                    </span>
+                  </div>
+                  <p>{request.ticketMessage}</p>
+                  <div className="ticket-message-actions">
+                    <button
+                      className="picked-up-button"
+                      type="button"
+                      disabled={updatingRequestId === request.id}
+                      onClick={() => sendTicketToClient(request)}
+                    >
+                      Envoyer au compte client
+                    </button>
+                    {request.ticketWhatsappUrl && (
+                      <a href={request.ticketWhatsappUrl} target="_blank" rel="noreferrer">
+                        Envoyer WhatsApp
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="history-actions">
                 <button
                   className="picked-up-button"
                   type="button"
-                  onClick={() => onUpdateClientRequestStatus(request.id, "accepted")}
+                  disabled={updatingRequestId === request.id}
+                  onClick={() => updateStatus(request, "accepted")}
                 >
                   Accepter
                 </button>
                 <button
                   className="back-button compact-button"
                   type="button"
-                  onClick={() => onUpdateClientRequestStatus(request.id, "awaiting_deposit")}
+                  disabled={updatingRequestId === request.id}
+                  onClick={() => updateStatus(request, "awaiting_deposit")}
                 >
                   Attente depot
                 </button>
                 <button
                   className="back-button compact-button"
                   type="button"
-                  onClick={() => onUpdateClientRequestStatus(request.id, "deposit_confirmed")}
+                  disabled={updatingRequestId === request.id}
+                  onClick={() => updateStatus(request, "deposit_confirmed")}
                 >
                   Depot confirme
                 </button>
                 <button
                   className="delete-ticket-button"
                   type="button"
-                  onClick={() => onUpdateClientRequestStatus(request.id, "refused")}
+                  disabled={updatingRequestId === request.id}
+                  onClick={() => updateStatus(request, "refused")}
                 >
                   Refuser
                 </button>
@@ -4322,6 +4442,8 @@ function App() {
   const [selectedPickupOrder, setSelectedPickupOrder] = useState(null);
   const [selectedReportOrder, setSelectedReportOrder] = useState(null);
   const [activeAdminView, setActiveAdminView] = useState("deposit");
+  const [adminClientRequestsSeenAt, setAdminClientRequestsSeenAt] = useState(0);
+  const [clientHistorySeenAt, setClientHistorySeenAt] = useState(0);
   const currentRole = getSessionRole(adminSession);
   const currentPressingId = getSessionPressingId(adminSession);
   const currentPressingName = getSessionPressingName(adminSession);
@@ -4413,6 +4535,42 @@ function App() {
       )
       .slice(0, 8);
   }, [pickupQuery, orderHistory]);
+  const adminClientRequestBadgeCount = pressingClientRequests.filter(
+    (request) =>
+      request.status === "submitted" &&
+      new Date(request.createdAt || request.updatedAt || 0).getTime() > adminClientRequestsSeenAt
+  ).length;
+  const clientHistoryBadgeCount = clientRequests.filter(
+    (request) =>
+      request.status !== "submitted" &&
+      new Date(request.updatedAt || request.createdAt || 0).getTime() > clientHistorySeenAt
+  ).length;
+
+  function markAdminClientRequestsSeen() {
+    const now = Date.now();
+    setAdminClientRequestsSeenAt(now);
+
+    if (currentPressingId) {
+      localStorage.setItem(`pressingtrack-seen-client-requests-${currentPressingId}`, String(now));
+    }
+  }
+
+  function markClientHistorySeen() {
+    const now = Date.now();
+    setClientHistorySeenAt(now);
+
+    if (adminSession?.user?.id) {
+      localStorage.setItem(`pressingtrack-seen-client-history-${adminSession.user.id}`, String(now));
+    }
+  }
+
+  function selectAdminView(viewId) {
+    setActiveAdminView(viewId);
+
+    if (viewId === "clientRequests") {
+      markAdminClientRequestsSeen();
+    }
+  }
 
   useEffect(() => {
     if (isSupabaseConfigured) {
@@ -4440,6 +4598,34 @@ function App() {
 
     localStorage.setItem(CUSTOM_ARTICLES_STORAGE_KEY, JSON.stringify(customArticles));
   }, [customArticles]);
+
+  useEffect(() => {
+    if (!currentPressingId) {
+      setAdminClientRequestsSeenAt(0);
+      return;
+    }
+
+    setAdminClientRequestsSeenAt(
+      Number(localStorage.getItem(`pressingtrack-seen-client-requests-${currentPressingId}`) || 0)
+    );
+  }, [currentPressingId]);
+
+  useEffect(() => {
+    if (!adminSession?.user?.id) {
+      setClientHistorySeenAt(0);
+      return;
+    }
+
+    setClientHistorySeenAt(
+      Number(localStorage.getItem(`pressingtrack-seen-client-history-${adminSession.user.id}`) || 0)
+    );
+  }, [adminSession?.user?.id]);
+
+  useEffect(() => {
+    if (activeAdminView === "clientRequests") {
+      markAdminClientRequestsSeen();
+    }
+  }, [activeAdminView, pressingClientRequests.length]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -5033,28 +5219,178 @@ function App() {
   }
 
   async function updateClientRequestStatus(requestId, status) {
-    setPressingClientRequests((current) =>
-      current.map((request) =>
-        request.id === requestId ? { ...request, status, updatedAt: new Date().toISOString() } : request
-      )
-    );
+    const updatedAt = new Date().toISOString();
+    const request = pressingClientRequests.find((item) => item.id === requestId);
+
+    if (!request) {
+      return { ok: false, message: "Demande client introuvable." };
+    }
+
+    let createdTicket = null;
+
+    if (status === "accepted" && request.status !== "accepted") {
+      const pressingId = currentPressingId || request.pressingId;
+
+      if (isSupabaseConfigured && !pressingId) {
+        return { ok: false, message: "Aucun pressing n'est associe a ce compte." };
+      }
+
+      let ticketNumber;
+      try {
+        ticketNumber = await getNextTicketNumber();
+      } catch {
+        ticketNumber = createTicketNumber(orderHistory);
+      }
+
+      const readyDate = getReadyDate();
+      const createdAt = new Date().toISOString();
+      const ticketItemsFromRequest = request.items.map((item) => ({
+        lineId: item.lineId || crypto.randomUUID(),
+        name: item.name,
+        icon: getArticleIcon(item.name),
+        price: item.total || item.unitPrice * item.quantity,
+        reserve: "Demande client",
+        washOptionId: request.serviceType,
+        washOptionLabel: getPriceOptionLabel(request.serviceType),
+        copyNumber: 1,
+        copyTotal: 1,
+        details: {
+          ...EMPTY_DETAILS,
+          note: [
+            `Collecte: ${request.collectionAddress}`,
+            `Livraison: ${request.deliveryAddress || request.collectionAddress}`,
+            request.note ? `Note client: ${request.note}` : ""
+          ]
+            .filter(Boolean)
+            .join(" | ")
+        }
+      }));
+      const whatsappPhone = normalizeWhatsAppPhone(request.clientPhone);
+      const message = buildWhatsAppMessage({
+        ticketNumber,
+        readyDate,
+        total: request.estimatedTotal,
+        items: ticketItemsFromRequest
+      });
+
+      createdTicket = {
+        id: crypto.randomUUID(),
+        pressingId,
+        ticketNumber,
+        status: "IN_PROCESSING",
+        createdAt,
+        clientPhone: request.clientPhone,
+        whatsappPhone,
+        total: request.estimatedTotal,
+        itemCount: ticketItemsFromRequest.length,
+        items: ticketItemsFromRequest,
+        readyDate,
+        whatsappUrl: `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(message)}`,
+        message
+      };
+
+      if (isSupabaseConfigured) {
+        const { error: ticketError } = await supabase.from("tickets").insert(toDatabaseTicket(createdTicket));
+
+        if (ticketError) {
+          setDatabaseError("Creation du ticket depuis la demande client echouee.");
+          return { ok: false, message: "Creation du ticket impossible dans Supabase." };
+        }
+      }
+    }
+
+    const requestUpdates = {
+      status,
+      updatedAt,
+      ...(createdTicket
+        ? {
+            ticketId: createdTicket.id,
+            ticketNumber: createdTicket.ticketNumber,
+            ticketMessage: createdTicket.message,
+            ticketWhatsappUrl: createdTicket.whatsappUrl
+          }
+        : {})
+    };
+    const databaseRequestUpdates = {
+      status,
+      updated_at: updatedAt,
+      ...(createdTicket
+        ? {
+            ticket_id: createdTicket.id,
+            ticket_number: createdTicket.ticketNumber,
+            ticket_message: createdTicket.message,
+            ticket_whatsapp_url: createdTicket.whatsappUrl
+          }
+        : {})
+    };
 
     if (!isSupabaseConfigured || !currentPressingId) {
-      return;
+      setPressingClientRequests((current) =>
+        current.map((request) => (request.id === requestId ? { ...request, ...requestUpdates } : request))
+      );
+      if (createdTicket) {
+        setOrderHistory((current) => [createdTicket, ...current]);
+      }
+      return { ok: true, ticketNumber: createdTicket?.ticketNumber };
     }
 
     const { error } = await supabase
       .from("client_service_requests")
-      .update({ status, updated_at: new Date().toISOString() })
+      .update(databaseRequestUpdates)
       .eq("pressing_id", currentPressingId)
       .eq("id", requestId);
 
     if (error) {
       setDatabaseError("Mise a jour de la demande client echouee.");
-      return;
+      return { ok: false, message: "Mise a jour Supabase echouee." };
     }
 
+    setPressingClientRequests((current) =>
+      current.map((request) => (request.id === requestId ? { ...request, ...requestUpdates } : request))
+    );
+    if (createdTicket) {
+      setOrderHistory((current) => [createdTicket, ...current]);
+    }
     setDatabaseError("");
+    return { ok: true, ticketNumber: createdTicket?.ticketNumber };
+  }
+
+  async function sendTicketToClientAccount(requestId) {
+    const request = pressingClientRequests.find((item) => item.id === requestId);
+
+    if (!request?.ticketNumber || !request?.ticketMessage) {
+      return { ok: false, message: "Acceptez d'abord la demande pour creer le ticket." };
+    }
+
+    const ticketSentAt = new Date().toISOString();
+
+    if (!isSupabaseConfigured || !currentPressingId) {
+      setPressingClientRequests((current) =>
+        current.map((item) =>
+          item.id === requestId ? { ...item, ticketSentAt, updatedAt: ticketSentAt } : item
+        )
+      );
+      return { ok: true };
+    }
+
+    const { error } = await supabase
+      .from("client_service_requests")
+      .update({ ticket_sent_at: ticketSentAt, updated_at: ticketSentAt })
+      .eq("pressing_id", currentPressingId)
+      .eq("id", requestId);
+
+    if (error) {
+      setDatabaseError("Envoi du ticket au compte client echoue.");
+      return { ok: false, message: "Envoi Supabase impossible." };
+    }
+
+    setPressingClientRequests((current) =>
+      current.map((item) =>
+        item.id === requestId ? { ...item, ticketSentAt, updatedAt: ticketSentAt } : item
+      )
+    );
+    setDatabaseError("");
+    return { ok: true };
   }
 
   function resetArticleModal() {
@@ -5614,6 +5950,8 @@ function App() {
         clientArticlePrices={clientArticlePrices}
         clientProfile={clientProfile}
         clientRequests={clientRequests}
+        historyBadgeCount={clientHistoryBadgeCount}
+        onOpenHistory={markClientHistorySeen}
         onCreateClientRequest={createClientServiceRequest}
         onLogout={logoutAdmin}
         pressingName={getSessionPressingName(adminSession) || clientInvitePressingName}
@@ -5675,9 +6013,10 @@ function App() {
     return (
       <AppShell
         activeView={activeAdminView}
+        badgeCounts={{ clientRequests: adminClientRequestBadgeCount }}
         menuItems={ADMIN_MENU}
         onLogout={logoutAdmin}
-        onSelectView={setActiveAdminView}
+        onSelectView={selectAdminView}
         pressingName={currentPressingName}
         role={currentRole}
       >
@@ -5773,6 +6112,7 @@ function App() {
         {activeAdminView === "clientRequests" && (
           <ClientRequestsView
             clientRequests={pressingClientRequests}
+            onSendTicketToClient={sendTicketToClientAccount}
             onUpdateClientRequestStatus={updateClientRequestStatus}
           />
         )}
@@ -5927,9 +6267,10 @@ function App() {
   return (
     <AppShell
       activeView={activeAdminView}
+      badgeCounts={{ clientRequests: adminClientRequestBadgeCount }}
       menuItems={ADMIN_MENU}
       onLogout={logoutAdmin}
-      onSelectView={setActiveAdminView}
+      onSelectView={selectAdminView}
       pressingName={currentPressingName}
       role={currentRole}
     >

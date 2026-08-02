@@ -1108,6 +1108,31 @@ h2 {
   color: #14532d;
 }
 
+.status-submitted {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-accepted,
+.status-deposit_confirmed,
+.status-completed {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-awaiting_deposit,
+.status-in_processing,
+.status-ready {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-refused,
+.status-canceled {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .history-item footer strong {
   color: var(--green-dark);
 }
@@ -1152,6 +1177,13 @@ h2 {
   background: var(--red);
   color: #ffffff;
   box-shadow: 0 8px 18px rgba(220, 38, 38, 0.2);
+}
+
+.history-actions button:disabled {
+  background: #94a3b8;
+  color: #ffffff;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .modal-backdrop {
@@ -1641,6 +1673,10 @@ h2 {
 }
 
 .workspace-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   min-height: 54px;
   border: 2px solid transparent;
   border-radius: 8px;
@@ -1651,6 +1687,30 @@ h2 {
   font-weight: 1000;
   padding: 10px 12px;
   text-align: left;
+}
+
+.workspace-nav-item span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.nav-notification-badge {
+  display: inline-grid;
+  min-width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--red);
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 1000;
+  padding: 0 7px;
+}
+
+.workspace-nav-item.active .nav-notification-badge {
+  background: #ffffff;
+  color: var(--red);
 }
 
 .workspace-nav-item:hover {
@@ -2945,6 +3005,59 @@ h2 {
   padding: 6px 8px;
 }
 
+.ticket-message-panel {
+  display: grid;
+  gap: 10px;
+  border: 2px solid var(--green);
+  border-radius: 8px;
+  background: #f0fdf4;
+  padding: 12px;
+}
+
+.client-item .ticket-message-panel {
+  grid-column: 1 / -1;
+}
+
+.ticket-message-panel div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ticket-message-panel p {
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.ticket-message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ticket-message-actions a {
+  display: inline-grid;
+  min-height: 54px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--green);
+  color: #ffffff;
+  font-weight: 1000;
+  padding: 10px 14px;
+  text-decoration: none;
+}
+
+.ticket-message-actions a:hover {
+  background: var(--green-dark);
+}
+
 .stock-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3560,9 +3673,15 @@ h2 {
   }
 
   .client-detail-ticket-top,
-  .client-detail-ticket-meta {
+  .client-detail-ticket-meta,
+  .ticket-message-panel div,
+  .ticket-message-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .ticket-message-actions a {
+    width: 100%;
   }
 
   .report-grid {

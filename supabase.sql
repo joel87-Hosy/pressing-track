@@ -257,6 +257,12 @@ create table if not exists client_service_requests (
   updated_at timestamptz not null default now()
 );
 
+alter table client_service_requests add column if not exists ticket_id uuid references tickets(id);
+alter table client_service_requests add column if not exists ticket_number text;
+alter table client_service_requests add column if not exists ticket_message text;
+alter table client_service_requests add column if not exists ticket_whatsapp_url text;
+alter table client_service_requests add column if not exists ticket_sent_at timestamptz;
+
 create table if not exists article_prices (
   pressing_id uuid references pressings(id),
   article_id text not null,
