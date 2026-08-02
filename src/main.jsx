@@ -3978,7 +3978,9 @@ function ClientRequestsView({ clientRequests, onSendTicketToClient, onUpdateClie
     setStatusMessage({
       type: "success",
       message:
-        status === "accepted" && result.ticketNumber
+        result.warning
+          ? `${request.clientName}: demande acceptee et transformee en ticket ${result.ticketNumber}. ${result.warning}`
+          : status === "accepted" && result.ticketNumber
           ? `${request.clientName}: demande acceptee et transformee en ticket ${result.ticketNumber}.`
           : `${request.clientName}: statut passe a "${CLIENT_REQUEST_STATUS_LABELS[status] || status}".`
     });
@@ -5341,8 +5343,29 @@ function App() {
       .eq("id", requestId);
 
     if (error) {
-      setDatabaseError("Mise a jour de la demande client echouee.");
-      return { ok: false, message: "Mise a jour Supabase echouee." };
+      const { error: fallbackError } = await supabase
+        .from("client_service_requests")
+        .update({ status, updated_at: updatedAt })
+        .eq("pressing_id", currentPressingId)
+        .eq("id", requestId);
+
+      if (fallbackError) {
+        setDatabaseError(`Mise a jour de la demande client echouee: ${fallbackError.message}`);
+        return { ok: false, message: `Mise a jour Supabase echouee: ${fallbackError.message}` };
+      }
+
+      setPressingClientRequests((current) =>
+        current.map((request) => (request.id === requestId ? { ...request, ...requestUpdates } : request))
+      );
+      if (createdTicket) {
+        setOrderHistory((current) => [createdTicket, ...current]);
+      }
+      setDatabaseError(`Ticket cree, mais details non lies a la demande: ${error.message}`);
+      return {
+        ok: true,
+        ticketNumber: createdTicket?.ticketNumber,
+        warning: "Executez la mise a jour SQL pour enregistrer les details du ticket dans le compte client."
+      };
     }
 
     setPressingClientRequests((current) =>
