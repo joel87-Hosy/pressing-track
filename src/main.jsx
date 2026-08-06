@@ -226,6 +226,348 @@ const LEGAL_LINK_LABELS = {
   }
 };
 
+const TEXT_NODE_ORIGINALS = new WeakMap();
+const ATTRIBUTE_ORIGINALS = new WeakMap();
+const TRANSLATABLE_ATTRIBUTES = ["placeholder", "title", "aria-label"];
+const UI_TRANSLATIONS_EN = {
+  "Langue / Language": "Language",
+  "Choisir la langue": "Choose language",
+  "Pages legales": "Legal pages",
+  "Preferences cookies": "Cookie preferences",
+  "Fermer": "Close",
+  "Fermer le menu": "Close menu",
+  "Menu principal": "Main menu",
+  "Verification": "Checking",
+  "Controle de la session en cours.": "Checking the current session.",
+  "Connexion": "Login",
+  "Espace client": "Client area",
+  "Acces reserve au comptoir, aux rapports et a l'historique.": "Access reserved for counter operations, reports, and history.",
+  "Creez votre compte pour envoyer une demande de lavage au pressing.": "Create your account to send a cleaning request to the pressing.",
+  "Creer compte": "Create account",
+  "Se connecter": "Log in",
+  "Nom complet": "Full name",
+  "Votre nom": "Your name",
+  "Genre": "Gender",
+  "Numero de telephone": "Phone number",
+  "Mot de passe": "Password",
+  "Patientez...": "Please wait...",
+  "Creer mon compte": "Create my account",
+  "Email ou mot de passe incorrect.": "Incorrect email or password.",
+  "Saisissez votre nom et votre numero de telephone.": "Enter your name and phone number.",
+  "Creation impossible. Verifiez l'email ou le mot de passe.": "Account creation failed. Check the email or password.",
+  "Compte cree. Verifiez votre email puis reconnectez-vous.": "Account created. Check your email, then log in again.",
+  "Tableau de bord": "Dashboard",
+  "Compte rattache a": "Account linked to",
+  "Tickets deposes": "Deposited tickets",
+  "Tickets retires": "Picked up tickets",
+  "En traitement": "Processing",
+  "Clients": "Clients",
+  "Total depots": "Total deposits",
+  "Statuts tickets": "Ticket statuses",
+  "Part des tickets retires et en traitement.": "Share of picked up and processing tickets.",
+  "Depots sur 7 jours": "Deposits over 7 days",
+  "Volume quotidien des tickets enregistres.": "Daily volume of recorded tickets.",
+  "Alertes stock": "Stock alerts",
+  "Articles prets ou depasses avant retrait.": "Items ready or overdue before pickup.",
+  "Pret retrait": "Ready for pickup",
+  "Depasse": "Overdue",
+  "Top clients": "Top clients",
+  "Clients classes par montant total depose.": "Clients ranked by total deposited amount.",
+  "Aucune activite client a afficher.": "No client activity to display.",
+  "Rapport des depots et dates de retrait.": "Report of deposits and pickup dates.",
+  "Filtrer les tickets par periode": "Filter tickets by period",
+  "Ticket": "Ticket",
+  "Client": "Client",
+  "Depot": "Deposit",
+  "Retrait": "Pickup",
+  "Statut": "Status",
+  "Total": "Total",
+  "Chargement des tickets...": "Loading tickets...",
+  "Aucun ticket a afficher.": "No ticket to display.",
+  "Liste des clients avec depots et retraits.": "Client list with deposits and pickups.",
+  "Aucun client a afficher.": "No client to display.",
+  "Voir detail": "View details",
+  "Retraits": "Pickups",
+  "Recherche et validation des tickets a retirer.": "Search and validate tickets to pick up.",
+  "Numero du ticket": "Ticket number",
+  "Saisissez au moins 2 caracteres du ticket.": "Enter at least 2 ticket characters.",
+  "Aucun ticket trouve.": "No ticket found.",
+  "Valider le retrait": "Validate pickup",
+  "Prix": "Prices",
+  "Grilles tarifaires par type de lavage.": "Price grids by cleaning type.",
+  "Type de lavage": "Cleaning type",
+  "Ajouter / modifier ce cas": "Add / edit this case",
+  "Aucun tarif Fanico defini.": "No Fanico price set.",
+  "Flux du pressing": "Pressing flow",
+  "Journal des mouvements pour preparer le rapport au superviseur.": "Movement log to prepare the supervisor report.",
+  "Suivi des depots, retraits, retards et recettes du pressing.": "Track deposits, pickups, delays, and pressing revenue.",
+  "Point par periode": "Period summary",
+  "Jour, semaine ou mois selon le rapport souhaite.": "Day, week, or month depending on the report needed.",
+  "Periode du flux": "Flow period",
+  "Telecharger Excel": "Download Excel",
+  "Telecharger PDF": "Download PDF",
+  "Periode": "Period",
+  "Depasses": "Overdue",
+  "Recette": "Revenue",
+  "Chargement du flux...": "Loading flow...",
+  "Aucun flux a afficher.": "No flow to display.",
+  "Derniers mouvements": "Latest movements",
+  "Prix de chaque depot et statut actuel.": "Price of each deposit and current status.",
+  "Statut flux": "Flow status",
+  "Prix depot": "Deposit price",
+  "Aucun mouvement recent.": "No recent movement.",
+  "Recettes du mois": "Monthly revenue",
+  "Recettes totales": "Total revenue",
+  "Ajouter un article": "Add item",
+  "Creation d'un article absent de la liste actuelle.": "Create an item missing from the current list.",
+  "Nom de l'article": "Item name",
+  "Articles disponibles": "Available items",
+  "Detail ticket": "Ticket details",
+  "Pressing rattache": "Linked pressing",
+  "Demandes totales": "Total requests",
+  "En cours": "In progress",
+  "Terminees": "Completed",
+  "Derniere demande": "Latest request",
+  "Total estime": "Estimated total",
+  "Montant en cours": "Pending amount",
+  "Graphiques client": "Client charts",
+  "Activite sur 7 jours": "7-day activity",
+  "Nombre de demandes envoyees par jour.": "Number of requests sent per day.",
+  "Courbe des demandes client": "Client request chart",
+  "Statuts": "Statuses",
+  "Repartition de vos demandes.": "Breakdown of your requests.",
+  "Aucune demande a analyser.": "No request to analyze.",
+  "Derniere activite": "Latest activity",
+  "Resume de la demande la plus recente.": "Summary of the most recent request.",
+  "Aucune demande envoyee pour le moment.": "No request sent yet.",
+  "Tarifs lavage": "Cleaning prices",
+  "Choisissez le type de lavage avant de declarer vos vetements.": "Choose the cleaning type before declaring your clothes.",
+  "Nouvelle demande": "New request",
+  "Ramassage et livraison a domicile.": "Home pickup and delivery.",
+  "Adresse de collecte": "Pickup address",
+  "Adresse de livraison": "Delivery address",
+  "Date souhaitee": "Preferred date",
+  "Note": "Note",
+  "Envoyer la demande": "Send request",
+  "Envoi...": "Sending...",
+  "Aucun vetement ajoute.": "No clothing item added.",
+  "Mes demandes": "My requests",
+  "Suivi des demandes envoyees au pressing.": "Track requests sent to the pressing.",
+  "Aucune demande envoyee.": "No request sent.",
+  "Confirmation du pressing": "Pressing confirmation",
+  "Retrait disponible": "Pickup available",
+  "Commander un livreur": "Order a courier",
+  "Informations client": "Client information",
+  "Coordonnees rattachees a votre compte.": "Contact details linked to your account.",
+  "Nom": "Name",
+  "Telephone": "Phone",
+  "Demandes clients": "Client requests",
+  "Demandes envoyees depuis le lien client du pressing.": "Requests sent from the pressing client link.",
+  "Aucune demande client recue.": "No client request received.",
+  "Confirmation envoyee": "Confirmation sent",
+  "Demande de livraison": "Delivery request",
+  "Accepter": "Accept",
+  "Attente depot": "Awaiting deposit",
+  "Depot confirme": "Deposit confirmed",
+  "Refuser": "Reject",
+  "Tableau": "Dashboard",
+  "Rapports": "Reports",
+  "Stock": "Stock",
+  "Parametres": "Settings",
+  "Ajouter article": "Add item",
+  "Tickets": "Tickets",
+  "Jour": "Day",
+  "Semaine": "Week",
+  "Mois": "Month",
+  "Pressings actifs": "Active pressings",
+  "Inactifs": "Inactive",
+  "Tickets reseau": "Network tickets",
+  "Expirent bientot": "Expiring soon",
+  "Chiffre pressings": "Pressing revenue",
+  "Factures dues": "Due invoices",
+  "Utilisateurs par role": "Users by role",
+  "Alertes": "Alerts",
+  "Ajouter un pressing": "Add a pressing",
+  "Pressings": "Pressings",
+  "Abonnement": "Subscription",
+  "Creation": "Created",
+  "Comptes": "Accounts",
+  "Dernier depot": "Last deposit",
+  "Actions": "Actions",
+  "Clients finaux": "End clients",
+  "Clients inscrits": "Registered clients",
+  "Actifs": "Active",
+  "Suspendus": "Suspended",
+  "Abonnes actifs": "Active subscribers",
+  "Essais": "Trials",
+  "Montant du": "Amount due",
+  "Plans / Tarifs": "Plans / Prices",
+  "Abonnements": "Subscriptions",
+  "Mensuel": "Monthly",
+  "Debut": "Start",
+  "Action": "Action",
+  "Factures": "Invoices",
+  "Montant": "Amount",
+  "Echeance": "Due date",
+  "Rappels & Relances": "Reminders & Follow-ups",
+  "Utilisateurs": "Users",
+  "Role": "Role",
+  "Creation compte": "Account created",
+  "Derniere connexion": "Last login",
+  "Assistance technique": "Technical support",
+  "Taux d'utilisation": "Usage rate",
+  "Rapports financiers": "Financial reports",
+  "Annonces / Pop-ups": "Announcements / Pop-ups",
+  "Audience": "Audience",
+  "Message": "Message",
+  "Publier": "Publish",
+  "SMS & Emails systeme": "System SMS & emails",
+  "Tickets de support": "Support tickets",
+  "Sujet": "Subject",
+  "Priorite": "Priority",
+  "Date": "Date",
+  "Roles & permissions": "Roles & permissions",
+  "Modes de paiement": "Payment methods",
+  "Informations plateforme": "Platform information",
+  "Enregistrer": "Save",
+  "Journal des actions": "Action log",
+  "Utilisateur": "User",
+  "Cible": "Target",
+  "Mon profil": "My profile",
+  "Photo, informations du compte et securite.": "Photo, account information, and security.",
+  "Photo": "Photo",
+  "Mot de passe": "Password",
+  "Lien client": "Client link",
+  "Annonces plateforme": "Platform announcements",
+  "Support": "Support",
+  "Envoyez une demande au Super Admin.": "Send a request to the Super Admin.",
+  "Depot client": "Client deposit",
+  "Articles": "Items",
+  "Selection tactile rapide, details au clic.": "Fast touch selection, details on click.",
+  "Prix de lavage": "Cleaning prices",
+  "Liste des articles disponibles": "Available item list",
+  "Ticket en cours": "Current ticket",
+  "Touchez un article a gauche pour demarrer.": "Tap an item on the left to start.",
+  "Numero WhatsApp du client avec indicatif": "Client WhatsApp number with country code",
+  "Pave numerique tactile": "Touch keypad",
+  "Retrait client": "Client pickup",
+  "Verifier un ticket": "Check a ticket",
+  "Tickets stockes": "Stored tickets",
+  "Historique": "History",
+  "Periode historique": "History period",
+  "Aucun ticket valide sur cette periode.": "No valid ticket for this period.",
+  "Quantite et details": "Quantity and details",
+  "Reserve / tache": "Issue / stain",
+  "Nombre d'articles identiques": "Number of identical items",
+  "Verification retrait": "Pickup check",
+  "Annuler": "Cancel",
+  "Valider le retrait": "Validate pickup",
+  "Deconnexion": "Log out"
+};
+
+const UI_TRANSLATION_REPLACEMENTS_EN = [
+  ["Recu le", "Received on"],
+  ["Mis a jour:", "Updated:"],
+  ["Genre:", "Gender:"],
+  ["Collecte:", "Pickup:"],
+  ["Livraison:", "Delivery:"],
+  ["Quantite:", "Quantity:"],
+  ["Prix unitaire:", "Unit price:"],
+  ["Priorite:", "Priority:"],
+  ["Statut:", "Status:"],
+  ["Pressing:", "Pressing:"],
+  ["Derniere demande:", "Latest request:"],
+  ["Livreur demande le", "Courier requested on"],
+  ["articles", "items"],
+  ["article", "item"],
+  ["vetements", "clothing items"],
+  ["vetement", "clothing item"]
+];
+
+function translateInterfaceText(originalText, language) {
+  if (language !== "en") {
+    return originalText;
+  }
+
+  const trimmedText = originalText.trim();
+  const leadingSpace = originalText.match(/^\s*/)?.[0] || "";
+  const trailingSpace = originalText.match(/\s*$/)?.[0] || "";
+  let translatedText = UI_TRANSLATIONS_EN[trimmedText];
+
+  if (!translatedText) {
+    translatedText = trimmedText;
+    UI_TRANSLATION_REPLACEMENTS_EN.forEach(([from, to]) => {
+      translatedText = translatedText.replaceAll(from, to);
+    });
+  }
+
+  return translatedText === trimmedText ? originalText : `${leadingSpace}${translatedText}${trailingSpace}`;
+}
+
+function translateInterfaceElement(root, language) {
+  if (!root) {
+    return;
+  }
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+
+      if (
+        !parent ||
+        ["SCRIPT", "STYLE", "TEXTAREA", "INPUT", "SELECT", "OPTION"].includes(parent.tagName) ||
+        !node.nodeValue.trim()
+      ) {
+        return NodeFilter.FILTER_REJECT;
+      }
+
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const textNodes = [];
+
+  while (walker.nextNode()) {
+    textNodes.push(walker.currentNode);
+  }
+
+  textNodes.forEach((node) => {
+    if (!TEXT_NODE_ORIGINALS.has(node)) {
+      TEXT_NODE_ORIGINALS.set(node, node.nodeValue);
+    }
+
+    const nextText = translateInterfaceText(TEXT_NODE_ORIGINALS.get(node), language);
+
+    if (node.nodeValue !== nextText) {
+      node.nodeValue = nextText;
+    }
+  });
+
+  root.querySelectorAll(TRANSLATABLE_ATTRIBUTES.map((attribute) => `[${attribute}]`).join(",")).forEach((element) => {
+    TRANSLATABLE_ATTRIBUTES.forEach((attribute) => {
+      if (!element.hasAttribute(attribute)) {
+        return;
+      }
+
+      let originals = ATTRIBUTE_ORIGINALS.get(element);
+
+      if (!originals) {
+        originals = {};
+        ATTRIBUTE_ORIGINALS.set(element, originals);
+      }
+
+      if (!originals[attribute]) {
+        originals[attribute] = element.getAttribute(attribute);
+      }
+
+      const nextAttributeValue = translateInterfaceText(originals[attribute], language);
+
+      if (element.getAttribute(attribute) !== nextAttributeValue) {
+        element.setAttribute(attribute, nextAttributeValue);
+      }
+    });
+  });
+}
+
 const CLIENT_GENDER_OPTIONS = [
   { id: "", label: "Non renseigne" },
   { id: "female", label: "Femme" },
@@ -1197,7 +1539,7 @@ function exportPressingFlowCsv({ orderHistory, period, pressingName }) {
   );
 }
 
-function exportPressingFlowPdf({ flowRows, orderHistory, period, pressingName }) {
+function exportPressingFlowPdf({ flowRows, language = "fr", orderHistory, period, pressingName }) {
   const monthlyRevenue = orderHistory
     .filter((order) => getPeriodKey(order.createdAt, "month") === getPeriodKey(new Date(), "month"))
     .reduce((sum, order) => sum + order.total, 0);
@@ -1227,17 +1569,17 @@ function exportPressingFlowPdf({ flowRows, orderHistory, period, pressingName })
         </style>
       </head>
       <body>
-        <button onclick="window.print()">Imprimer / Enregistrer PDF</button>
-        <h1>Rapport flux du pressing</h1>
-        <p>${pressingName} - Periode: ${period} - Genere le ${formatDateTime(new Date())}</p>
+        <button onclick="window.print()">${language === "en" ? "Print / Save PDF" : "Imprimer / Enregistrer PDF"}</button>
+        <h1>${language === "en" ? "Pressing flow report" : "Rapport flux du pressing"}</h1>
+        <p>${pressingName} - ${language === "en" ? "Period" : "Periode"}: ${period} - ${language === "en" ? "Generated on" : "Genere le"} ${formatDateTime(new Date())}</p>
         <div class="cards">
-          <div class="card"><span>Depots</span><strong>${orderHistory.length}</strong></div>
-          <div class="card"><span>Retraits</span><strong>${orderHistory.filter((order) => order.status === "PICKED_UP").length}</strong></div>
-          <div class="card"><span>En traitement</span><strong>${orderHistory.filter((order) => getFlowStatus(order) === "En traitement").length}</strong></div>
-          <div class="card"><span>Recettes du mois</span><strong>${formatMoney(monthlyRevenue)}</strong></div>
+          <div class="card"><span>${language === "en" ? "Deposits" : "Depots"}</span><strong>${orderHistory.length}</strong></div>
+          <div class="card"><span>${language === "en" ? "Pickups" : "Retraits"}</span><strong>${orderHistory.filter((order) => order.status === "PICKED_UP").length}</strong></div>
+          <div class="card"><span>${language === "en" ? "Processing" : "En traitement"}</span><strong>${orderHistory.filter((order) => getFlowStatus(order) === "En traitement").length}</strong></div>
+          <div class="card"><span>${language === "en" ? "Monthly revenue" : "Recettes du mois"}</span><strong>${formatMoney(monthlyRevenue)}</strong></div>
         </div>
         <table>
-          <thead><tr><th>Periode</th><th>Depots</th><th>Retraits</th><th>En traitement</th><th>Depasses</th><th>Recette</th></tr></thead>
+          <thead><tr><th>${language === "en" ? "Period" : "Periode"}</th><th>${language === "en" ? "Deposits" : "Depots"}</th><th>${language === "en" ? "Pickups" : "Retraits"}</th><th>${language === "en" ? "Processing" : "En traitement"}</th><th>${language === "en" ? "Overdue" : "Depasses"}</th><th>${language === "en" ? "Revenue" : "Recette"}</th></tr></thead>
           <tbody>
             ${flowRows
               .map(
@@ -3780,7 +4122,7 @@ function SettingsView({
   );
 }
 
-function PressingFlowView({ historyLoading, orderHistory, pressingName, viewer = "admin" }) {
+function PressingFlowView({ historyLoading, language = "fr", orderHistory, pressingName, viewer = "admin" }) {
   const [flowPeriod, setFlowPeriod] = useState("day");
   const flowRows = useMemo(
     () => getPressingFlowRows(orderHistory, flowPeriod),
@@ -3872,7 +4214,7 @@ function PressingFlowView({ historyLoading, orderHistory, pressingName, viewer =
             <button
               type="button"
               onClick={() =>
-                exportPressingFlowPdf({ flowRows, orderHistory, period: flowPeriod, pressingName })
+                exportPressingFlowPdf({ flowRows, language, orderHistory, period: flowPeriod, pressingName })
               }
             >
               Telecharger PDF
@@ -5187,6 +5529,7 @@ function SupervisorDashboard({
       {activeView === "pressingFlow" && (
         <PressingFlowView
           historyLoading={historyLoading}
+          language={language}
           orderHistory={orderHistory}
           pressingName={pressingName}
           viewer="supervisor"
@@ -5637,6 +5980,21 @@ function App() {
 
   useEffect(() => {
     document.documentElement.lang = language;
+    translateInterfaceElement(document.body, language);
+
+    const observer = new MutationObserver(() => {
+      window.requestAnimationFrame(() => translateInterfaceElement(document.body, language));
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: TRANSLATABLE_ATTRIBUTES
+    });
+
+    return () => observer.disconnect();
   }, [language]);
 
   useEffect(() => {
@@ -7348,6 +7706,7 @@ function App() {
         {activeAdminView === "pressingFlow" && (
           <PressingFlowView
             historyLoading={historyLoading}
+            language={language}
             orderHistory={orderHistory}
             pressingName={currentPressingName}
           />
