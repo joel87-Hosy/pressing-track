@@ -4971,6 +4971,14 @@ function ClientPortal({
   return (
     <main className="client-portal-shell">
       <header className="client-portal-header">
+        <button
+          aria-expanded={isClientMenuOpen}
+          className="mobile-menu-button client-menu-toggle"
+          type="button"
+          onClick={() => setIsClientMenuOpen((current) => !current)}
+        >
+          {isClientMenuOpen ? "Fermer" : "Menu"}
+        </button>
         <div>
           <p className="eyebrow">{pressingName}</p>
           <h1>Espace client</h1>
@@ -4978,15 +4986,8 @@ function ClientPortal({
         </div>
         <div className="client-portal-header-actions">
           <LanguageSelector language={language} onLanguageChange={onLanguageChange} />
-          <button
-            aria-expanded={isClientMenuOpen}
-            className="mobile-menu-button client-menu-toggle"
-            type="button"
-            onClick={() => setIsClientMenuOpen((current) => !current)}
-          >
-            {isClientMenuOpen ? "Fermer" : "Menu"}
-          </button>
-          <button className="logout-button" type="button" onClick={onLogout}>
+          <div className="mobile-role-chip">Client</div>
+          <button className="logout-button client-header-logout" type="button" onClick={onLogout}>
             Deconnexion
           </button>
         </div>

@@ -433,14 +433,14 @@ a:focus-visible {
 
   .client-portal-header {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
     align-items: center;
     min-height: 82px;
     padding: 12px 18px;
   }
 
   .client-portal-header > div:first-child {
-    padding-left: 60px;
+    padding-left: 0;
   }
 
   .client-portal-header-actions {
@@ -3625,7 +3625,7 @@ h2 {
 
   .client-portal-header {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
     gap: 14px;
     align-items: center;
     min-height: 82px;
@@ -3640,7 +3640,6 @@ h2 {
 
   .client-portal-header > div:first-child {
     min-width: 0;
-    padding-left: 60px;
   }
 
   .client-portal-header .eyebrow {
@@ -3669,9 +3668,6 @@ h2 {
   }
 
   .client-menu-toggle {
-    position: absolute;
-    left: 18px;
-    top: 18px;
     display: inline-grid;
   }
 
@@ -3687,6 +3683,14 @@ h2 {
   }
 
   .client-portal-header-actions .logout-button {
+    display: none;
+  }
+
+  .client-portal-header-actions .mobile-role-chip {
+    display: grid;
+  }
+
+  .client-header-logout {
     min-height: 34px;
     max-width: 126px;
     border-radius: 999px;
