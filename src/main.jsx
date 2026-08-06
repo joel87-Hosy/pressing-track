@@ -1498,6 +1498,10 @@ function getPressingFlowRows(orderHistory, period) {
 
 function downloadTextFile(filename, content, mimeType) {
   const blob = new Blob([content], { type: mimeType });
+  downloadBlob(filename, blob);
+}
+
+function downloadBlob(filename, blob) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -1510,6 +1514,152 @@ function downloadTextFile(filename, content, mimeType) {
 
 function csvEscape(value) {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function sanitizePdfText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function createPressingFlowPdf({ flowRows, language = "fr", orderHistory, period, pressingName }) {
+  const labels =
+    language === "en"
+      ? {
+          title: "Pressing flow report",
+          period: "Period",
+          generated: "Generated on",
+          deposits: "Deposits",
+          pickups: "Pickups",
+          processing: "Processing",
+          overdue: "Overdue",
+          monthlyRevenue: "Monthly revenue",
+          revenue: "Revenue"
+        }
+      : {
+          title: "Rapport flux du pressing",
+          period: "Periode",
+          generated: "Genere le",
+          deposits: "Depots",
+          pickups: "Retraits",
+          processing: "En traitement",
+          overdue: "Depasses",
+          monthlyRevenue: "Recettes du mois",
+          revenue: "Recette"
+        };
+  const monthlyRevenue = orderHistory
+    .filter((order) => getPeriodKey(order.createdAt, "month") === getPeriodKey(new Date(), "month"))
+    .reduce((sum, order) => sum + order.total, 0);
+  const summaryRows = [
+    [labels.deposits, orderHistory.length],
+    [labels.pickups, orderHistory.filter((order) => order.status === "PICKED_UP").length],
+    [labels.processing, orderHistory.filter((order) => getFlowStatus(order) === "En traitement").length],
+    [labels.monthlyRevenue, formatMoney(monthlyRevenue)]
+  ];
+  const tableRows = [
+    [labels.period, labels.deposits, labels.pickups, labels.processing, labels.overdue, labels.revenue],
+    ...flowRows.map((row) => [
+      row.label,
+      row.deposits,
+      row.pickups,
+      row.processing,
+      row.overdue,
+      formatMoney(row.revenue)
+    ])
+  ];
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const margin = 40;
+  const rowHeight = 20;
+  const columnX = [40, 160, 220, 290, 380, 455];
+  const contentStreams = [];
+  let commands = [];
+  let y = pageHeight - margin;
+
+  function addText(text, x, textY, size = 10, bold = false) {
+    commands.push(`BT /F${bold ? 2 : 1} ${size} Tf ${x} ${textY} Td (${sanitizePdfText(text)}) Tj ET`);
+  }
+
+  function newPage() {
+    if (commands.length > 0) {
+      contentStreams.push(commands.join("\n"));
+    }
+    commands = [];
+    y = pageHeight - margin;
+  }
+
+  addText(labels.title, margin, y, 18, true);
+  y -= 26;
+  addText(`${pressingName} - ${labels.period}: ${period} - ${labels.generated}: ${formatDateTime(new Date())}`, margin, y, 10);
+  y -= 34;
+  summaryRows.forEach(([label, value], index) => {
+    const x = margin + (index % 2) * 255;
+    const boxY = y - Math.floor(index / 2) * 54;
+    commands.push(`${x} ${boxY - 30} 225 42 re S`);
+    addText(label, x + 10, boxY - 8, 9, true);
+    addText(value, x + 10, boxY - 25, 13, true);
+  });
+  y -= 116;
+
+  tableRows.forEach((row, index) => {
+    if (y < 70) {
+      newPage();
+    }
+
+    if (index === 0) {
+      commands.push(`0.06 0.13 0.25 rg ${margin} ${y - 5} 515 22 re f 0 0 0 rg`);
+    }
+
+    row.forEach((cell, cellIndex) => {
+      addText(cell, columnX[cellIndex], y, index === 0 ? 8 : 8, index === 0);
+    });
+    y -= rowHeight;
+  });
+
+  newPage();
+
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"
+  ];
+  const pageObjectIds = [];
+  const contentObjectIds = [];
+
+  contentStreams.forEach((stream) => {
+    const pageObjectId = objects.length + 1;
+    const contentObjectId = objects.length + 2;
+    pageObjectIds.push(pageObjectId);
+    contentObjectIds.push(contentObjectId);
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentObjectId} 0 R >>`
+    );
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  });
+
+  objects[1] = `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageObjectIds.length} >>`;
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return new Blob([pdf], { type: "application/pdf" });
 }
 
 function exportPressingFlowCsv({ orderHistory, period, pressingName }) {
@@ -1540,60 +1690,10 @@ function exportPressingFlowCsv({ orderHistory, period, pressingName }) {
 }
 
 function exportPressingFlowPdf({ flowRows, language = "fr", orderHistory, period, pressingName }) {
-  const monthlyRevenue = orderHistory
-    .filter((order) => getPeriodKey(order.createdAt, "month") === getPeriodKey(new Date(), "month"))
-    .reduce((sum, order) => sum + order.total, 0);
-  const reportWindow = window.open("", "_blank", "noopener,noreferrer");
-
-  if (!reportWindow) {
-    return;
-  }
-
-  reportWindow.document.write(`
-    <!doctype html>
-    <html>
-      <head>
-        <title>Flux du pressing</title>
-        <style>
-          body { font-family: Arial, sans-serif; color: #102033; margin: 32px; }
-          h1 { margin-bottom: 4px; }
-          p { color: #52657a; font-weight: 700; }
-          table { width: 100%; border-collapse: collapse; margin-top: 18px; }
-          th { background: #102033; color: white; text-align: left; }
-          th, td { border: 1px solid #c7d2df; padding: 9px; font-size: 12px; }
-          .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 18px 0; }
-          .card { border: 1px solid #c7d2df; border-radius: 8px; padding: 12px; }
-          .card span { color: #52657a; font-size: 11px; font-weight: 800; text-transform: uppercase; }
-          .card strong { display: block; margin-top: 8px; font-size: 20px; }
-          @media print { button { display: none; } body { margin: 18mm; } }
-        </style>
-      </head>
-      <body>
-        <button onclick="window.print()">${language === "en" ? "Print / Save PDF" : "Imprimer / Enregistrer PDF"}</button>
-        <h1>${language === "en" ? "Pressing flow report" : "Rapport flux du pressing"}</h1>
-        <p>${pressingName} - ${language === "en" ? "Period" : "Periode"}: ${period} - ${language === "en" ? "Generated on" : "Genere le"} ${formatDateTime(new Date())}</p>
-        <div class="cards">
-          <div class="card"><span>${language === "en" ? "Deposits" : "Depots"}</span><strong>${orderHistory.length}</strong></div>
-          <div class="card"><span>${language === "en" ? "Pickups" : "Retraits"}</span><strong>${orderHistory.filter((order) => order.status === "PICKED_UP").length}</strong></div>
-          <div class="card"><span>${language === "en" ? "Processing" : "En traitement"}</span><strong>${orderHistory.filter((order) => getFlowStatus(order) === "En traitement").length}</strong></div>
-          <div class="card"><span>${language === "en" ? "Monthly revenue" : "Recettes du mois"}</span><strong>${formatMoney(monthlyRevenue)}</strong></div>
-        </div>
-        <table>
-          <thead><tr><th>${language === "en" ? "Period" : "Periode"}</th><th>${language === "en" ? "Deposits" : "Depots"}</th><th>${language === "en" ? "Pickups" : "Retraits"}</th><th>${language === "en" ? "Processing" : "En traitement"}</th><th>${language === "en" ? "Overdue" : "Depasses"}</th><th>${language === "en" ? "Revenue" : "Recette"}</th></tr></thead>
-          <tbody>
-            ${flowRows
-              .map(
-                (row) =>
-                  `<tr><td>${row.label}</td><td>${row.deposits}</td><td>${row.pickups}</td><td>${row.processing}</td><td>${row.overdue}</td><td>${formatMoney(row.revenue)}</td></tr>`
-              )
-              .join("")}
-          </tbody>
-        </table>
-      </body>
-    </html>
-  `);
-  reportWindow.document.close();
-  reportWindow.focus();
+  downloadBlob(
+    `flux-pressing-${period}-${new Date().toISOString().slice(0, 10)}.pdf`,
+    createPressingFlowPdf({ flowRows, language, orderHistory, period, pressingName })
+  );
 }
 
 function getLastSevenDayRows(orderHistory) {
@@ -1816,10 +1916,6 @@ function AppShell({
   return (
     <div className={isMobileMenuOpen ? "workspace-shell menu-open" : "workspace-shell"}>
       <header className="mobile-workspace-header">
-        <div>
-          <p className="eyebrow">{pressingName}</p>
-          <strong>PressingTrack</strong>
-        </div>
         <button
           aria-expanded={isMobileMenuOpen}
           aria-controls="workspace-sidebar"
@@ -1829,6 +1925,11 @@ function AppShell({
         >
           {isMobileMenuOpen ? "Fermer" : "Menu"}
         </button>
+        <div>
+          <p className="eyebrow">{pressingName}</p>
+          <strong>PressingTrack</strong>
+        </div>
+        <div className="mobile-role-chip">{getRoleLabel(role, language)}</div>
       </header>
 
       {isMobileMenuOpen && (
