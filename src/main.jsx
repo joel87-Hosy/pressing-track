@@ -21,6 +21,7 @@ const MOCK_ARTICLES = [
 
 const DEFAULT_ARTICLE_IDS = new Set(MOCK_ARTICLES.map((article) => article.id));
 const CUSTOM_ARTICLES_STORAGE_KEY = "pressingtrack-custom-articles";
+const LANGUAGE_STORAGE_KEY = "pressingtrack-language";
 const PROFILE_AVATAR_BUCKET = "profile-avatars";
 const PROFILE_AVATAR_MAX_SIZE = 2 * 1024 * 1024;
 const DEFAULT_PRICE_OPTION_ID = "normal";
@@ -87,12 +88,154 @@ const CLIENT_REQUEST_STATUS_LABELS = {
   canceled: "Annulee"
 };
 
+const CLIENT_REQUEST_CONFIRMATION_MESSAGES = {
+  awaiting_deposit:
+    "Bonjour, votre pressing a bien recu votre commande. Un coursier passera recuperer vos vetements afin que notre equipe puisse les verifier avant la confirmation du depot. Merci pour votre confiance.",
+  deposit_confirmed:
+    "Bonjour, votre depot a ete confirme apres verification par le pressing. Votre ticket sera genere et transmis dans les meilleurs delais via votre compte client ou par WhatsApp. Merci pour votre confiance."
+};
+
+const PICKUP_REMINDER_LEVELS = {
+  ready: 1,
+  overdue_1_day: 2,
+  overdue_1_week: 3
+};
+
+const PICKUP_REMINDER_MESSAGES = {
+  ready:
+    "Bonjour, votre depot est pret pour le retrait. Vous pouvez passer le recuperer directement au pressing, ou commander un livreur depuis votre compte client. Merci pour votre confiance.",
+  overdue_1_day:
+    "Bonjour, nous vous rappelons que votre depot est pret depuis hier. Vous pouvez passer au pressing pour le recuperer ou commander un livreur depuis votre compte client. Merci de votre attention.",
+  overdue_1_week:
+    "Bonjour, votre depot est pret depuis plus d'une semaine. Nous vous invitons a le recuperer rapidement ou a commander un livreur depuis votre compte client. Passe ce delai, le pressing decline toute responsabilite en cas de perte ou de deterioration."
+};
+
 const ROLE_LABELS = {
   admin: "Admin",
   supervisor: "Superviseur",
   platform_admin: "Super Admin",
   client: "Client"
 };
+
+const ROLE_LABELS_BY_LANGUAGE = {
+  fr: ROLE_LABELS,
+  en: {
+    admin: "Manager",
+    supervisor: "Supervisor",
+    platform_admin: "Super Admin",
+    client: "Client"
+  }
+};
+
+const LANGUAGE_OPTIONS = [
+  { id: "fr", label: "FR" },
+  { id: "en", label: "EN" }
+];
+
+const COOKIE_CONSENT_STORAGE_KEY = "pressingtrack-cookie-consent";
+
+const LEGAL_PAGES = {
+  privacy: {
+    fr: {
+      title: "Confidentialite",
+      intro: "Cette page explique comment PressingTrack protege les informations des clients, gerants et pressings.",
+      sections: [
+        {
+          title: "Donnees collectees",
+          body: "Nous enregistrons les informations utiles au service: nom, telephone, email, pressing rattache, demandes client, tickets, articles, prix, statuts et messages de suivi."
+        },
+        {
+          title: "Utilisation",
+          body: "Ces donnees servent a gerer les depots, retraits, livraisons, notifications, historiques et rapports du pressing."
+        },
+        {
+          title: "Protection",
+          body: "Les acces sont limites selon le role du compte. Un client voit ses propres demandes. Un gerant voit les donnees de son pressing. Le super admin gere la plateforme."
+        },
+        {
+          title: "Conservation",
+          body: "Les donnees sont conservees aussi longtemps que necessaire pour le suivi du service, la preuve des tickets et les obligations de gestion."
+        }
+      ]
+    },
+    en: {
+      title: "Privacy",
+      intro: "This page explains how PressingTrack protects information from clients, managers, and pressings.",
+      sections: [
+        { title: "Collected data", body: "We store service data: name, phone, email, linked pressing, client requests, tickets, items, prices, statuses, and follow-up messages." },
+        { title: "Use", body: "This data is used to manage deposits, pickups, deliveries, notifications, history, and pressing reports." },
+        { title: "Protection", body: "Access is limited by account role. A client sees their own requests. A manager sees their pressing data. The super admin manages the platform." },
+        { title: "Retention", body: "Data is kept as long as needed for service tracking, ticket proof, and management obligations." }
+      ]
+    }
+  },
+  terms: {
+    fr: {
+      title: "Politiques generales",
+      intro: "Ces politiques fixent les regles d'utilisation de PressingTrack pour les pressings et leurs clients.",
+      sections: [
+        { title: "Responsabilites du pressing", body: "Le pressing doit verifier les vetements, renseigner des informations correctes et traiter les demandes client avec soin." },
+        { title: "Responsabilites du client", body: "Le client doit fournir des informations exactes, verifier ses tickets et recuperer ses articles dans les delais annonces." },
+        { title: "Tickets et retraits", body: "Le ticket sert de reference principale pour le suivi. Les rappels de retrait aident le client a recuperer son depot a temps." },
+        { title: "Livraison", body: "Une demande de livreur depuis le compte client est transmise au gerant, qui organise ensuite le traitement selon ses conditions." }
+      ]
+    },
+    en: {
+      title: "General policies",
+      intro: "These policies define how PressingTrack is used by pressings and their clients.",
+      sections: [
+        { title: "Pressing responsibilities", body: "The pressing must check clothes, enter correct information, and handle client requests carefully." },
+        { title: "Client responsibilities", body: "The client must provide accurate information, check tickets, and collect items within the announced timeframe." },
+        { title: "Tickets and pickups", body: "The ticket is the main tracking reference. Pickup reminders help the client collect their deposit on time." },
+        { title: "Delivery", body: "A delivery request from the client account is sent to the manager, who handles it according to their conditions." }
+      ]
+    }
+  },
+  cookies: {
+    fr: {
+      title: "Cookies",
+      intro: "PressingTrack utilise des cookies et donnees locales pour faire fonctionner l'application et ameliorer l'experience.",
+      sections: [
+        { title: "Cookies necessaires", body: "Ils permettent de garder la session, la langue choisie, les preferences et certaines donnees locales lorsque Supabase n'est pas configure." },
+        { title: "Cookies de confort", body: "Ils memorisent des choix comme la langue ou le consentement pour eviter de redemander la meme chose." },
+        { title: "Choix utilisateur", body: "Vous pouvez accepter, refuser ou personnaliser les cookies non essentiels depuis le pop-up cookies." }
+      ]
+    },
+    en: {
+      title: "Cookies",
+      intro: "PressingTrack uses cookies and local data to run the app and improve the experience.",
+      sections: [
+        { title: "Required cookies", body: "They keep the session, chosen language, preferences, and some local data when Supabase is not configured." },
+        { title: "Comfort cookies", body: "They remember choices such as language or consent so the app does not ask again every time." },
+        { title: "User choice", body: "You can accept, reject, or customize non-essential cookies from the cookie pop-up." }
+      ]
+    }
+  }
+};
+
+const LEGAL_LINK_LABELS = {
+  fr: {
+    privacy: "Confidentialite",
+    terms: "Politiques generales",
+    cookies: "Cookies"
+  },
+  en: {
+    privacy: "Privacy",
+    terms: "General policies",
+    cookies: "Cookies"
+  }
+};
+
+const CLIENT_GENDER_OPTIONS = [
+  { id: "", label: "Non renseigne" },
+  { id: "female", label: "Femme" },
+  { id: "male", label: "Homme" },
+  { id: "other", label: "Autre" }
+];
+
+function getClientGenderLabel(gender) {
+  return CLIENT_GENDER_OPTIONS.find((option) => option.id === gender)?.label || "Non renseigne";
+}
 
 function canAccessDashboard(role) {
   return role === "admin" || role === "supervisor" || role === "platform_admin";
@@ -312,6 +455,23 @@ function getPeriodKey(dateValue, period) {
   return date.toISOString().slice(0, 7);
 }
 
+function getPeriodLabel(dateValue, period) {
+  const date = new Date(dateValue);
+
+  if (period === "day") {
+    return formatDateOnly(dateValue);
+  }
+
+  if (period === "week") {
+    return getWeekKey(date);
+  }
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    month: "long",
+    year: "numeric"
+  }).format(date);
+}
+
 function formatDateTime(dateValue) {
   if (!dateValue) {
     return "-";
@@ -453,25 +613,27 @@ function DetailPills({ label, value, options, onChange }) {
 }
 
 const ADMIN_MENU = [
-  { id: "dashboard", label: "Tableau" },
-  { id: "deposit", label: "Depot" },
-  { id: "clientRequests", label: "Demandes clients" },
-  { id: "pickups", label: "Retraits" },
-  { id: "stock", label: "Stock" },
-  { id: "tickets", label: "Tickets" },
-  { id: "clients", label: "Clients" },
-  { id: "addArticle", label: "Ajouter article" },
-  { id: "prices", label: "Prix" },
-  { id: "settings", label: "Parametres" }
+  { id: "dashboard", label: "Tableau", help: "Voir les chiffres importants du pressing en un coup d'oeil." },
+  { id: "deposit", label: "Depot", help: "Enregistrer les vetements recus et creer un ticket pour le client." },
+  { id: "clientRequests", label: "Demandes clients", help: "Suivre les demandes envoyees par les clients depuis leur compte." },
+  { id: "pressingFlow", label: "Flux du pressing", help: "Voir les depots, retraits, retards et recettes par periode." },
+  { id: "pickups", label: "Retraits", help: "Verifier un ticket et confirmer que le client a recupere ses vetements." },
+  { id: "stock", label: "Stock", help: "Voir les vetements en attente, prets ou en retard de retrait." },
+  { id: "tickets", label: "Tickets", help: "Consulter la liste des tickets et ouvrir leur detail." },
+  { id: "clients", label: "Clients", help: "Voir les clients, leurs depots et leurs montants." },
+  { id: "addArticle", label: "Ajouter article", help: "Ajouter un type de vetement qui n'existe pas encore." },
+  { id: "prices", label: "Prix", help: "Modifier les tarifs des articles et des services." },
+  { id: "settings", label: "Parametres", help: "Gerer le profil, le lien client et les reglages du pressing." }
 ];
 
 const SUPERVISOR_MENU = [
-  { id: "dashboard", label: "Tableau" },
-  { id: "reports", label: "Rapports" },
-  { id: "stock", label: "Stock" },
-  { id: "tickets", label: "Tickets" },
-  { id: "clients", label: "Clients" },
-  { id: "settings", label: "Parametres" }
+  { id: "dashboard", label: "Tableau", help: "Voir la situation generale du pressing." },
+  { id: "reports", label: "Rapports", help: "Analyser les depots, retraits et montants du pressing." },
+  { id: "pressingFlow", label: "Flux du pressing", help: "Suivre les depots, retraits, retards et recettes du pressing." },
+  { id: "stock", label: "Stock", help: "Controler les vetements encore au pressing." },
+  { id: "tickets", label: "Tickets", help: "Retrouver les tickets par jour, semaine ou mois." },
+  { id: "clients", label: "Clients", help: "Consulter l'activite de chaque client." },
+  { id: "settings", label: "Parametres", help: "Voir les informations et options du compte." }
 ];
 
 const PLATFORM_MENU = [
@@ -488,6 +650,327 @@ const PLATFORM_MENU = [
   { id: "settings", label: "⚙️ Parametres" },
   { id: "security", label: "🔐 Securite / Logs" }
 ];
+
+const MENU_HELP_BY_ROLE = {
+  platform_admin: {
+    endClients: "Voir les clients inscrits dans les pressings.",
+    dashboard: "Voir l'activite globale de la plateforme.",
+    pressings: "Gerer les pressings clients et leurs comptes.",
+    billing: "Suivre les abonnements, factures et paiements.",
+    analytics: "Analyser les revenus, l'utilisation et les commandes.",
+    communication: "Publier des annonces aux pressings.",
+    support: "Lire et traiter les demandes d'aide.",
+    settings: "Voir les reglages de la plateforme.",
+    security: "Consulter les actions et traces importantes."
+  },
+  client: {
+    dashboard: "Voir le resume de vos demandes et leur avancement.",
+    prices: "Consulter les tarifs du pressing avant de commander.",
+    request: "Envoyer une nouvelle demande de lavage ou de livraison.",
+    history: "Suivre vos demandes, confirmations, tickets et rappels.",
+    account: "Voir vos informations personnelles."
+  }
+};
+
+const MENU_TRANSLATIONS = {
+  en: {
+    admin: {
+      dashboard: {
+        label: "Dashboard",
+        help: "See the pressing's important numbers at a glance."
+      },
+      deposit: {
+        label: "Deposit",
+        help: "Register received clothes and create a ticket for the client."
+      },
+      clientRequests: {
+        label: "Client requests",
+        help: "Follow requests sent by clients from their account."
+      },
+      pressingFlow: {
+        label: "Pressing flow",
+        help: "See deposits, pickups, delays, and revenue by period."
+      },
+      pickups: {
+        label: "Pickups",
+        help: "Check a ticket and confirm that the client collected the clothes."
+      },
+      stock: {
+        label: "Stock",
+        help: "See clothes waiting, ready, or late for pickup."
+      },
+      tickets: {
+        label: "Tickets",
+        help: "View the ticket list and open details."
+      },
+      clients: {
+        label: "Clients",
+        help: "See clients, their deposits, and their totals."
+      },
+      addArticle: {
+        label: "Add item",
+        help: "Add a clothing type that is not in the list yet."
+      },
+      prices: {
+        label: "Prices",
+        help: "Change article and service prices."
+      },
+      settings: {
+        label: "Settings",
+        help: "Manage the profile, client link, and pressing settings."
+      }
+    },
+    supervisor: {
+      dashboard: { label: "Dashboard", help: "See the overall situation of the pressing." },
+      reports: { label: "Reports", help: "Analyze deposits, pickups, and amounts." },
+      pressingFlow: { label: "Pressing flow", help: "Track deposits, pickups, delays, and pressing revenue." },
+      stock: { label: "Stock", help: "Check clothes still at the pressing." },
+      tickets: { label: "Tickets", help: "Find tickets by day, week, or month." },
+      clients: { label: "Clients", help: "View each client's activity." },
+      settings: { label: "Settings", help: "View account information and options." }
+    },
+    platform_admin: {
+      endClients: { label: "End clients", help: "See clients registered in pressings." },
+      dashboard: { label: "Dashboard", help: "See global platform activity." },
+      pressings: { label: "Pressings", help: "Manage client pressings and their accounts." },
+      billing: { label: "Subscriptions", help: "Follow subscriptions, invoices, and payments." },
+      analytics: { label: "Analytics", help: "Analyze revenue, usage, and orders." },
+      communication: { label: "Messages", help: "Publish announcements to pressings." },
+      support: { label: "Support", help: "Read and handle help requests." },
+      settings: { label: "Settings", help: "View platform settings." },
+      security: { label: "Security / Logs", help: "Review important actions and logs." }
+    },
+    client: {
+      dashboard: { label: "Dashboard", help: "See a summary of your requests and progress." },
+      prices: { label: "Prices", help: "Check pressing prices before ordering." },
+      request: { label: "New request", help: "Send a new washing or delivery request." },
+      history: { label: "My requests", help: "Follow your requests, confirmations, tickets, and reminders." },
+      account: { label: "My profile", help: "View your personal information." }
+    }
+  }
+};
+
+function getStoredLanguage() {
+  try {
+    return localStorage.getItem(LANGUAGE_STORAGE_KEY) || "fr";
+  } catch {
+    return "fr";
+  }
+}
+
+function getMenuItemLabel(item, role, language) {
+  return MENU_TRANSLATIONS[language]?.[role]?.[item.id]?.label || item.label;
+}
+
+function getMenuItemHelp(item, role, language = "fr") {
+  return MENU_TRANSLATIONS[language]?.[role]?.[item.id]?.help || item.help || MENU_HELP_BY_ROLE[role]?.[item.id] || "";
+}
+
+function getRoleLabel(role, language = "fr") {
+  return ROLE_LABELS_BY_LANGUAGE[language]?.[role] || ROLE_LABELS[role] || role;
+}
+
+function LanguageSelector({ language, onLanguageChange = () => {} }) {
+  return (
+    <label className="language-selector">
+      <span>Langue / Language</span>
+      <select
+        aria-label="Choisir la langue"
+        value={language}
+        onChange={(event) => onLanguageChange(event.target.value)}
+      >
+        {LANGUAGE_OPTIONS.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function LegalLinks({ language = "fr" }) {
+  const labels = LEGAL_LINK_LABELS[language] || LEGAL_LINK_LABELS.fr;
+
+  return (
+    <nav className="legal-links" aria-label="Pages legales">
+      {Object.entries(labels).map(([pageId, label]) => (
+        <a href={`#legal-${pageId}`} key={pageId}>
+          {label}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+function useLegalPageFromHash() {
+  const [legalPageId, setLegalPageId] = useState(() =>
+    window.location.hash.replace("#legal-", "")
+  );
+
+  useEffect(() => {
+    function updateLegalPage() {
+      setLegalPageId(window.location.hash.replace("#legal-", ""));
+    }
+
+    window.addEventListener("hashchange", updateLegalPage);
+    return () => window.removeEventListener("hashchange", updateLegalPage);
+  }, []);
+
+  return LEGAL_PAGES[legalPageId] ? legalPageId : "";
+}
+
+function LegalPageOverlay({ language = "fr" }) {
+  const pageId = useLegalPageFromHash();
+
+  if (!pageId) {
+    return null;
+  }
+
+  const page = LEGAL_PAGES[pageId][language] || LEGAL_PAGES[pageId].fr;
+
+  function closeLegalPage() {
+    history.pushState("", document.title, window.location.pathname + window.location.search);
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  }
+
+  return (
+    <div className="legal-page-backdrop" role="dialog" aria-modal="true" aria-labelledby="legal-page-title">
+      <article className="legal-page">
+        <div className="legal-page-header">
+          <div>
+            <p className="eyebrow">PressingTrack</p>
+            <h2 id="legal-page-title">{page.title}</h2>
+          </div>
+          <button type="button" onClick={closeLegalPage}>
+            {language === "en" ? "Close" : "Fermer"}
+          </button>
+        </div>
+        <p className="legal-page-intro">{page.intro}</p>
+        <div className="legal-page-sections">
+          {page.sections.map((section) => (
+            <section key={section.title}>
+              <h3>{section.title}</h3>
+              <p>{section.body}</p>
+            </section>
+          ))}
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function CookieConsentPopup({ language = "fr" }) {
+  const [consent, setConsent] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(COOKIE_CONSENT_STORAGE_KEY)) || null;
+    } catch {
+      return null;
+    }
+  });
+  const [isCustomizing, setIsCustomizing] = useState(false);
+  const [preferences, setPreferences] = useState({
+    necessary: true,
+    comfort: true,
+    analytics: false
+  });
+
+  if (consent) {
+    return null;
+  }
+
+  const copy =
+    language === "en"
+      ? {
+          title: "Cookie preferences",
+          body: "We use required cookies for the app to work, and optional cookies to remember choices and improve the experience.",
+          accept: "Accept all",
+          reject: "Reject optional",
+          customize: "Customize",
+          save: "Save choices",
+          necessary: "Required",
+          comfort: "Comfort",
+          analytics: "Analytics",
+          requiredNote: "Always active"
+        }
+      : {
+          title: "Preferences cookies",
+          body: "Nous utilisons des cookies necessaires au fonctionnement de l'app, et des cookies optionnels pour memoriser vos choix et ameliorer l'experience.",
+          accept: "Tout accepter",
+          reject: "Refuser l'optionnel",
+          customize: "Personnaliser",
+          save: "Enregistrer mes choix",
+          necessary: "Necessaires",
+          comfort: "Confort",
+          analytics: "Analyse",
+          requiredNote: "Toujours actif"
+        };
+
+  function saveConsent(nextPreferences) {
+    const nextConsent = {
+      ...nextPreferences,
+      savedAt: new Date().toISOString()
+    };
+    localStorage.setItem(COOKIE_CONSENT_STORAGE_KEY, JSON.stringify(nextConsent));
+    setConsent(nextConsent);
+  }
+
+  return (
+    <div className="cookie-consent" role="dialog" aria-modal="true" aria-label={copy.title}>
+      <div className="cookie-consent-main">
+        <div>
+          <p className="eyebrow">PressingTrack</p>
+          <h2>{copy.title}</h2>
+          <p>{copy.body}</p>
+        </div>
+        {isCustomizing && (
+          <div className="cookie-preferences" aria-label="Preferences cookies">
+            <label>
+              <input checked readOnly type="checkbox" />
+              <span>{copy.necessary}</span>
+              <small>{copy.requiredNote}</small>
+            </label>
+            <label>
+              <input
+                checked={preferences.comfort}
+                type="checkbox"
+                onChange={(event) =>
+                  setPreferences((current) => ({ ...current, comfort: event.target.checked }))
+                }
+              />
+              <span>{copy.comfort}</span>
+            </label>
+            <label>
+              <input
+                checked={preferences.analytics}
+                type="checkbox"
+                onChange={(event) =>
+                  setPreferences((current) => ({ ...current, analytics: event.target.checked }))
+                }
+              />
+              <span>{copy.analytics}</span>
+            </label>
+          </div>
+        )}
+      </div>
+      <div className="cookie-actions">
+        <button type="button" onClick={() => saveConsent({ necessary: true, comfort: true, analytics: true })}>
+          {copy.accept}
+        </button>
+        <button type="button" onClick={() => saveConsent({ necessary: true, comfort: false, analytics: false })}>
+          {copy.reject}
+        </button>
+        <button
+          className="cookie-secondary-button"
+          type="button"
+          onClick={() => (isCustomizing ? saveConsent(preferences) : setIsCustomizing(true))}
+        >
+          {isCustomizing ? copy.save : copy.customize}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const SUBSCRIPTION_STATUS_LABELS = {
   active: "Actif",
@@ -576,6 +1059,34 @@ function getExpectedPickupDate(order) {
   return date;
 }
 
+function getPickupReminderForRequest(request, order) {
+  if (!request?.ticketNumber || !order || order.status === "PICKED_UP") {
+    return null;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const expectedPickupDate = getExpectedPickupDate(order);
+  const daysAfterPickupDate = Math.floor(
+    (today.getTime() - expectedPickupDate.getTime()) / 86400000
+  );
+
+  if (daysAfterPickupDate >= 7) {
+    return { level: "overdue_1_week", message: PICKUP_REMINDER_MESSAGES.overdue_1_week };
+  }
+
+  if (daysAfterPickupDate >= 1) {
+    return { level: "overdue_1_day", message: PICKUP_REMINDER_MESSAGES.overdue_1_day };
+  }
+
+  if (daysAfterPickupDate >= 0) {
+    return { level: "ready", message: PICKUP_REMINDER_MESSAGES.ready };
+  }
+
+  return null;
+}
+
 function getStockRows(orderHistory) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -600,6 +1111,147 @@ function getStockRows(orderHistory) {
         icon: item.icon
       }));
     });
+}
+
+function getFlowStatus(order) {
+  if (order.status === "PICKED_UP") {
+    return "Retire";
+  }
+
+  const expectedPickupDate = getExpectedPickupDate(order);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return expectedPickupDate < today ? "Depasse" : "En traitement";
+}
+
+function getPressingFlowRows(orderHistory, period) {
+  const groups = new Map();
+
+  orderHistory.forEach((order) => {
+    const key = getPeriodKey(order.createdAt, period);
+    const row = groups.get(key) || {
+      key,
+      label: getPeriodLabel(order.createdAt, period),
+      deposits: 0,
+      pickups: 0,
+      processing: 0,
+      overdue: 0,
+      revenue: 0,
+      orders: []
+    };
+    const flowStatus = getFlowStatus(order);
+
+    row.deposits += 1;
+    row.pickups += order.status === "PICKED_UP" ? 1 : 0;
+    row.processing += flowStatus === "En traitement" ? 1 : 0;
+    row.overdue += flowStatus === "Depasse" ? 1 : 0;
+    row.revenue += order.total;
+    row.orders.push(order);
+    groups.set(key, row);
+  });
+
+  return Array.from(groups.values()).sort((a, b) => b.key.localeCompare(a.key));
+}
+
+function downloadTextFile(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(value) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function exportPressingFlowCsv({ orderHistory, period, pressingName }) {
+  const rows = [
+    ["Pressing", "Periode", "Ticket", "Client", "Depot", "Retrait", "Statut", "Articles", "Montant"]
+  ];
+
+  orderHistory.forEach((order) => {
+    rows.push([
+      pressingName,
+      getPeriodLabel(order.createdAt, period),
+      order.ticketNumber,
+      order.clientPhone,
+      formatDateTime(order.createdAt),
+      formatDateTime(order.pickedUpAt),
+      getFlowStatus(order),
+      order.itemCount,
+      order.total
+    ]);
+  });
+
+  const csv = rows.map((row) => row.map(csvEscape).join(";")).join("\n");
+  downloadTextFile(
+    `flux-pressing-${period}-${new Date().toISOString().slice(0, 10)}.csv`,
+    "\ufeff" + csv,
+    "text/csv;charset=utf-8"
+  );
+}
+
+function exportPressingFlowPdf({ flowRows, orderHistory, period, pressingName }) {
+  const monthlyRevenue = orderHistory
+    .filter((order) => getPeriodKey(order.createdAt, "month") === getPeriodKey(new Date(), "month"))
+    .reduce((sum, order) => sum + order.total, 0);
+  const reportWindow = window.open("", "_blank", "noopener,noreferrer");
+
+  if (!reportWindow) {
+    return;
+  }
+
+  reportWindow.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <title>Flux du pressing</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #102033; margin: 32px; }
+          h1 { margin-bottom: 4px; }
+          p { color: #52657a; font-weight: 700; }
+          table { width: 100%; border-collapse: collapse; margin-top: 18px; }
+          th { background: #102033; color: white; text-align: left; }
+          th, td { border: 1px solid #c7d2df; padding: 9px; font-size: 12px; }
+          .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 18px 0; }
+          .card { border: 1px solid #c7d2df; border-radius: 8px; padding: 12px; }
+          .card span { color: #52657a; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+          .card strong { display: block; margin-top: 8px; font-size: 20px; }
+          @media print { button { display: none; } body { margin: 18mm; } }
+        </style>
+      </head>
+      <body>
+        <button onclick="window.print()">Imprimer / Enregistrer PDF</button>
+        <h1>Rapport flux du pressing</h1>
+        <p>${pressingName} - Periode: ${period} - Genere le ${formatDateTime(new Date())}</p>
+        <div class="cards">
+          <div class="card"><span>Depots</span><strong>${orderHistory.length}</strong></div>
+          <div class="card"><span>Retraits</span><strong>${orderHistory.filter((order) => order.status === "PICKED_UP").length}</strong></div>
+          <div class="card"><span>En traitement</span><strong>${orderHistory.filter((order) => getFlowStatus(order) === "En traitement").length}</strong></div>
+          <div class="card"><span>Recettes du mois</span><strong>${formatMoney(monthlyRevenue)}</strong></div>
+        </div>
+        <table>
+          <thead><tr><th>Periode</th><th>Depots</th><th>Retraits</th><th>En traitement</th><th>Depasses</th><th>Recette</th></tr></thead>
+          <tbody>
+            ${flowRows
+              .map(
+                (row) =>
+                  `<tr><td>${row.label}</td><td>${row.deposits}</td><td>${row.pickups}</td><td>${row.processing}</td><td>${row.overdue}</td><td>${formatMoney(row.revenue)}</td></tr>`
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `);
+  reportWindow.document.close();
+  reportWindow.focus();
 }
 
 function getLastSevenDayRows(orderHistory) {
@@ -688,6 +1340,7 @@ function fromDatabaseClientProfile(row) {
     pressingId: row.pressing_id,
     pressingName: row.pressings?.name || "",
     fullName: row.full_name,
+    gender: row.gender || "",
     email: row.email,
     phone: row.phone,
     status: row.status || "active",
@@ -703,6 +1356,7 @@ function fromDatabaseClientRequest(row) {
     clientProfileId: row.client_profile_id,
     clientUserId: row.client_user_id,
     clientName: row.client_name,
+    clientGender: row.client_gender || "",
     clientEmail: row.client_email,
     clientPhone: row.client_phone,
     serviceType: row.service_type,
@@ -714,6 +1368,14 @@ function fromDatabaseClientRequest(row) {
     note: row.note || "",
     estimatedTotal: row.estimated_total || 0,
     status: row.status || "submitted",
+    confirmationMessage: row.confirmation_message || "",
+    confirmationSentAt: row.confirmation_sent_at,
+    pickupReminderLevel: row.pickup_reminder_level || "",
+    pickupReminderMessage: row.pickup_reminder_message || "",
+    pickupReminderSentAt: row.pickup_reminder_sent_at,
+    deliveryRequestStatus: row.delivery_request_status || "",
+    deliveryRequestedAt: row.delivery_requested_at,
+    deliveryRequestNote: row.delivery_request_note || "",
     ticketId: row.ticket_id,
     ticketNumber: row.ticket_number,
     ticketMessage: row.ticket_message,
@@ -730,6 +1392,7 @@ function toDatabaseClientRequest(request) {
     client_profile_id: request.clientProfileId,
     client_user_id: request.clientUserId,
     client_name: request.clientName,
+    client_gender: request.clientGender || "",
     client_email: request.clientEmail,
     client_phone: request.clientPhone,
     service_type: request.serviceType,
@@ -793,7 +1456,9 @@ function AppShell({
   activeView,
   badgeCounts = {},
   children,
+  language = "fr",
   menuItems,
+  onLanguageChange,
   onLogout,
   onSelectView,
   pressingName,
@@ -843,31 +1508,54 @@ function AppShell({
           {menuItems.map((item, index) =>
             item.type === "separator" ? (
               <span className="workspace-nav-separator" key={`separator-${index}`} />
-            ) : (
-              <button
-                className={activeView === item.id ? "workspace-nav-item active" : "workspace-nav-item"}
-                key={item.id}
-                type="button"
-                onClick={() => selectView(item.id)}
-              >
-                <span>{item.label}</span>
-                {badgeCounts[item.id] > 0 && (
-                  <strong className="nav-notification-badge">{badgeCounts[item.id]}</strong>
-                )}
-              </button>
-            )
+            ) : (() => {
+              const helpText = getMenuItemHelp(item, role, language);
+              const labelText = getMenuItemLabel(item, role, language);
+
+              return (
+                <button
+                  aria-describedby={helpText ? `help-${role}-${item.id}` : undefined}
+                  className={activeView === item.id ? "workspace-nav-item active" : "workspace-nav-item"}
+                  key={item.id}
+                  title={helpText}
+                  type="button"
+                  onClick={() => selectView(item.id)}
+                >
+                  <span className="nav-label">{labelText}</span>
+                  <span className="nav-item-side">
+                    {badgeCounts[item.id] > 0 && (
+                      <strong className="nav-notification-badge">{badgeCounts[item.id]}</strong>
+                    )}
+                    {helpText && (
+                      <span className="nav-help">
+                        <span aria-hidden="true">?</span>
+                        <span className="nav-help-bubble" id={`help-${role}-${item.id}`} role="tooltip">
+                          {helpText}
+                        </span>
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })()
           )}
         </nav>
 
         <div className="workspace-account">
-          <div className="operator-badge">{ROLE_LABELS[role] || role}</div>
+          <LanguageSelector language={language} onLanguageChange={onLanguageChange} />
+          <div className="operator-badge">{getRoleLabel(role, language)}</div>
           <button className="logout-button" type="button" onClick={onLogout}>
-            Deconnexion
+            {language === "en" ? "Log out" : "Deconnexion"}
           </button>
         </div>
       </aside>
 
-      <main className="workspace-main">{children}</main>
+      <main className="workspace-main">
+        {children}
+        <LegalLinks language={language} />
+      </main>
+      <LegalPageOverlay language={language} />
+      <CookieConsentPopup language={language} />
     </div>
   );
 }
@@ -1016,7 +1704,25 @@ function DashboardCharts({ orderHistory }) {
   );
 }
 
-function TicketsReport({ historyLoading, onSelectOrder, orderHistory, title = "Tickets" }) {
+function TicketsReport({
+  enablePeriodFilter = false,
+  historyLoading,
+  onSelectOrder,
+  orderHistory,
+  title = "Tickets"
+}) {
+  const [ticketPeriod, setTicketPeriod] = useState("day");
+  const visibleOrderHistory = useMemo(() => {
+    if (!enablePeriodFilter) {
+      return orderHistory;
+    }
+
+    const currentPeriodKey = getPeriodKey(new Date(), ticketPeriod);
+    return orderHistory.filter(
+      (order) => getPeriodKey(order.createdAt, ticketPeriod) === currentPeriodKey
+    );
+  }, [enablePeriodFilter, orderHistory, ticketPeriod]);
+
   return (
     <section className="report-section" aria-label={title}>
       <div className="section-heading">
@@ -1024,8 +1730,23 @@ function TicketsReport({ historyLoading, onSelectOrder, orderHistory, title = "T
           <h2>{title}</h2>
           <p>Rapport des depots et dates de retrait.</p>
         </div>
-        <strong>{orderHistory.length}</strong>
+        <strong>{visibleOrderHistory.length}</strong>
       </div>
+
+      {enablePeriodFilter && (
+        <div className="period-tabs" role="tablist" aria-label="Filtrer les tickets par periode">
+          {HISTORY_PERIODS.map((period) => (
+            <button
+              className={ticketPeriod === period.id ? "period-tab active" : "period-tab"}
+              key={period.id}
+              type="button"
+              onClick={() => setTicketPeriod(period.id)}
+            >
+              {period.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="report-table">
         <div className="report-row report-row-head">
@@ -1039,10 +1760,10 @@ function TicketsReport({ historyLoading, onSelectOrder, orderHistory, title = "T
 
         {historyLoading ? (
           <div className="empty-history">Chargement des tickets...</div>
-        ) : orderHistory.length === 0 ? (
+        ) : visibleOrderHistory.length === 0 ? (
           <div className="empty-history">Aucun ticket a afficher.</div>
         ) : (
-          orderHistory.map((order) => (
+          visibleOrderHistory.map((order) => (
             <button
               className="report-row report-row-button"
               key={order.id}
@@ -1188,8 +1909,10 @@ function getPlatformEndClientRows(clientProfiles, clientRequests) {
 function PlatformDashboard({
   databaseError,
   historyLoading,
+  language,
   onCreatePressing,
   onCreatePlatformAnnouncement,
+  onLanguageChange,
   onLogout,
   orderHistory,
   onUpdateInvoiceStatus,
@@ -1244,7 +1967,9 @@ function PlatformDashboard({
   return (
     <AppShell
       activeView={activeView}
+      language={language}
       menuItems={PLATFORM_MENU}
+      onLanguageChange={onLanguageChange}
       onLogout={onLogout}
       onSelectView={setActiveView}
       pressingName={pressingName}
@@ -1673,7 +2398,7 @@ function PlatformEndClientsView({ endClientRows, onSelectClient, onUpdateEndClie
               <article className="client-item" key={client.id}>
                 <div>
                   <strong>{client.fullName}</strong>
-                  <span>{client.phone} - {client.email}</span>
+                  <span>{getClientGenderLabel(client.gender)} - {client.phone} - {client.email}</span>
                 </div>
                 <div>
                   <span>Pressing: {client.pressingName || client.pressingId}</span>
@@ -1730,6 +2455,10 @@ function PlatformEndClientDetailModal({ client, onClose, onUpdateEndClientStatus
           <div>
             <span>Telephone</span>
             <strong>{client.phone}</strong>
+          </div>
+          <div>
+            <span>Genre</span>
+            <strong>{getClientGenderLabel(client.gender)}</strong>
           </div>
           <div>
             <span>Demandes</span>
@@ -2180,6 +2909,7 @@ function PlatformAnalyticsView({
       </section>
 
       <TicketsReport
+        enablePeriodFilter
         historyLoading={historyLoading}
         onSelectOrder={onSelectOrder}
         orderHistory={orderHistory}
@@ -3050,6 +3780,173 @@ function SettingsView({
   );
 }
 
+function PressingFlowView({ historyLoading, orderHistory, pressingName, viewer = "admin" }) {
+  const [flowPeriod, setFlowPeriod] = useState("day");
+  const flowRows = useMemo(
+    () => getPressingFlowRows(orderHistory, flowPeriod),
+    [flowPeriod, orderHistory]
+  );
+  const currentMonthKey = getPeriodKey(new Date(), "month");
+  const monthlyRevenue = orderHistory
+    .filter((order) => getPeriodKey(order.createdAt, "month") === currentMonthKey)
+    .reduce((sum, order) => sum + order.total, 0);
+  const pickedUpCount = orderHistory.filter((order) => order.status === "PICKED_UP").length;
+  const processingCount = orderHistory.filter((order) => getFlowStatus(order) === "En traitement").length;
+  const overdueCount = orderHistory.filter((order) => getFlowStatus(order) === "Depasse").length;
+  const totalRevenue = orderHistory.reduce((sum, order) => sum + order.total, 0);
+  const latestOrders = orderHistory.slice(0, 12);
+
+  return (
+    <div className="workspace-stack">
+      <section className="report-section" aria-label="Flux du pressing">
+        <div className="section-heading">
+          <div>
+            <h2>Flux du pressing</h2>
+            <p>
+              {viewer === "supervisor"
+                ? "Suivi des depots, retraits, retards et recettes du pressing."
+                : "Journal des mouvements pour preparer le rapport au superviseur."}
+            </p>
+          </div>
+          <strong>{orderHistory.length}</strong>
+        </div>
+
+        <div className="report-grid">
+          <article className="report-card">
+            <span>Depots</span>
+            <strong>{orderHistory.length}</strong>
+          </article>
+          <article className="report-card">
+            <span>Retraits</span>
+            <strong>{pickedUpCount}</strong>
+          </article>
+          <article className="report-card">
+            <span>En traitement</span>
+            <strong>{processingCount}</strong>
+          </article>
+          <article className="report-card">
+            <span>Depasses</span>
+            <strong>{overdueCount}</strong>
+          </article>
+          <article className="report-card wide">
+            <span>Recettes du mois</span>
+            <strong>{formatMoney(monthlyRevenue)}</strong>
+          </article>
+          <article className="report-card wide">
+            <span>Recettes totales</span>
+            <strong>{formatMoney(totalRevenue)}</strong>
+          </article>
+        </div>
+      </section>
+
+      <section className="report-section" aria-label="Point du flux par periode">
+        <div className="section-heading">
+          <div>
+            <h2>Point par periode</h2>
+            <p>Jour, semaine ou mois selon le rapport souhaite.</p>
+          </div>
+        </div>
+
+        <div className="flow-toolbar">
+          <div className="period-tabs" role="tablist" aria-label="Periode du flux">
+            {HISTORY_PERIODS.map((period) => (
+              <button
+                className={flowPeriod === period.id ? "period-tab active" : "period-tab"}
+                key={period.id}
+                type="button"
+                onClick={() => setFlowPeriod(period.id)}
+              >
+                {period.label}
+              </button>
+            ))}
+          </div>
+          <div className="flow-export-actions">
+            <button
+              type="button"
+              onClick={() =>
+                exportPressingFlowCsv({ orderHistory, period: flowPeriod, pressingName })
+              }
+            >
+              Telecharger Excel
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                exportPressingFlowPdf({ flowRows, orderHistory, period: flowPeriod, pressingName })
+              }
+            >
+              Telecharger PDF
+            </button>
+          </div>
+        </div>
+
+        <div className="report-table">
+          <div className="flow-row flow-row-head">
+            <span>Periode</span>
+            <span>Depots</span>
+            <span>Retraits</span>
+            <span>En traitement</span>
+            <span>Depasses</span>
+            <span>Recette</span>
+          </div>
+
+          {historyLoading ? (
+            <div className="empty-history">Chargement du flux...</div>
+          ) : flowRows.length === 0 ? (
+            <div className="empty-history">Aucun flux a afficher.</div>
+          ) : (
+            flowRows.map((row) => (
+              <article className="flow-row flow-row-item" key={row.key}>
+                <strong>{row.label}</strong>
+                <span>{row.deposits}</span>
+                <span>{row.pickups}</span>
+                <span>{row.processing}</span>
+                <span>{row.overdue}</span>
+                <strong>{formatMoney(row.revenue)}</strong>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="report-section" aria-label="Derniers mouvements du pressing">
+        <div className="section-heading">
+          <div>
+            <h2>Derniers mouvements</h2>
+            <p>Prix de chaque depot et statut actuel.</p>
+          </div>
+          <strong>{latestOrders.length}</strong>
+        </div>
+
+        <div className="report-table">
+          <div className="report-row report-row-head">
+            <span>Ticket</span>
+            <span>Client</span>
+            <span>Depot</span>
+            <span>Retrait</span>
+            <span>Statut flux</span>
+            <span>Prix depot</span>
+          </div>
+          {latestOrders.length === 0 ? (
+            <div className="empty-history">Aucun mouvement recent.</div>
+          ) : (
+            latestOrders.map((order) => (
+              <article className="report-row report-row-button" key={order.id}>
+                <strong>{order.ticketNumber}</strong>
+                <span>{order.clientPhone}</span>
+                <span>{formatDateTime(order.createdAt)}</span>
+                <span>{formatDateTime(order.pickedUpAt)}</span>
+                <span>{getFlowStatus(order)}</span>
+                <strong>{formatMoney(order.total)}</strong>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function AddArticleView({ articles, onAddArticle }) {
   const [articleName, setArticleName] = useState("");
   const [articlePrice, setArticlePrice] = useState("");
@@ -3286,7 +4183,7 @@ function ClientDashboard({ clientProfile, clientRequests, pressingName }) {
         <div className="section-heading">
           <div>
             <h2>Tableau de bord</h2>
-            <p>{pressingName} - {clientProfile?.fullName || "Client"}</p>
+            <p>Compte rattache a {pressingName}</p>
           </div>
           <div className="client-dashboard-profile" aria-label="Profil client">
             <div className="client-dashboard-avatar">
@@ -3304,6 +4201,10 @@ function ClientDashboard({ clientProfile, clientRequests, pressingName }) {
         </div>
 
         <div className="report-grid">
+          <article className="report-card wide">
+            <span>Pressing rattache</span>
+            <strong>{pressingName}</strong>
+          </article>
           <article className="report-card">
             <span>Demandes totales</span>
             <strong>{clientRequests.length}</strong>
@@ -3411,8 +4312,11 @@ function ClientPortal({
   clientProfile,
   clientRequests,
   historyBadgeCount = 0,
+  language,
   onOpenHistory,
   onCreateClientRequest,
+  onRequestDelivery,
+  onLanguageChange,
   onLogout,
   pressingName
 }) {
@@ -3436,6 +4340,7 @@ function ClientPortal({
   const [note, setNote] = useState("");
   const [requestStatus, setRequestStatus] = useState({ type: "", message: "" });
   const [isSendingRequest, setIsSendingRequest] = useState(false);
+  const [requestingDeliveryId, setRequestingDeliveryId] = useState("");
   const [locatingAddress, setLocatingAddress] = useState("");
   const serviceOptions = PRICE_OPTIONS;
   const isClientSuspended = clientProfile?.status === "suspended";
@@ -3608,6 +4513,18 @@ function ClientPortal({
     setRequestStatus({ type: "success", message: "Demande envoyee au gerant du pressing." });
   }
 
+  async function requestDeliveryForPickup(request) {
+    setRequestingDeliveryId(request.id);
+    setRequestStatus({ type: "", message: "" });
+
+    const result = await onRequestDelivery(request.id);
+    setRequestingDeliveryId("");
+    setRequestStatus({
+      type: result?.ok ? "success" : "error",
+      message: result?.message || "Demande de livreur impossible."
+    });
+  }
+
   return (
     <main className="client-portal-shell">
       <header className="client-portal-header">
@@ -3617,6 +4534,7 @@ function ClientPortal({
           <p>{clientProfile?.fullName || "Client"}</p>
         </div>
         <div className="client-portal-header-actions">
+          <LanguageSelector language={language} onLanguageChange={onLanguageChange} />
           <button
             aria-expanded={isClientMenuOpen}
             className="mobile-menu-button client-menu-toggle"
@@ -3646,15 +4564,25 @@ function ClientPortal({
       >
         {CLIENT_PORTAL_MENU.map((item) => (
           <button
+            aria-describedby={`help-client-${item.id}`}
             className={activeClientView === item.id ? "workspace-nav-item active" : "workspace-nav-item"}
             key={item.id}
+            title={getMenuItemHelp(item, "client", language)}
             type="button"
             onClick={() => selectClientView(item.id)}
           >
-            <span>{item.label}</span>
-            {item.id === "history" && historyBadgeCount > 0 && (
-              <strong className="nav-notification-badge">{historyBadgeCount}</strong>
-            )}
+            <span className="nav-label">{getMenuItemLabel(item, "client", language)}</span>
+            <span className="nav-item-side">
+              {item.id === "history" && historyBadgeCount > 0 && (
+                <strong className="nav-notification-badge">{historyBadgeCount}</strong>
+              )}
+              <span className="nav-help">
+                <span aria-hidden="true">?</span>
+                <span className="nav-help-bubble" id={`help-client-${item.id}`} role="tooltip">
+                  {getMenuItemHelp(item, "client", language)}
+                </span>
+              </span>
+            </span>
           </button>
         ))}
       </nav>
@@ -3899,6 +4827,50 @@ function ClientPortal({
                   <span>{CLIENT_REQUEST_STATUS_LABELS[request.status] || request.status}</span>
                 </div>
                 <strong>{formatMoney(request.estimatedTotal)}</strong>
+                {request.confirmationMessage && (
+                  <div className="ticket-message-panel client-confirmation-message">
+                    <div>
+                      <strong>Confirmation du pressing</strong>
+                      <span>
+                        {request.confirmationSentAt
+                          ? `Recu le ${formatDateTime(request.confirmationSentAt)}`
+                          : CLIENT_REQUEST_STATUS_LABELS[request.status] || request.status}
+                      </span>
+                    </div>
+                    <p>{request.confirmationMessage}</p>
+                  </div>
+                )}
+                {request.pickupReminderMessage && (
+                  <div className="ticket-message-panel client-pickup-reminder">
+                    <div>
+                      <strong>Retrait disponible</strong>
+                      <span>
+                        {request.pickupReminderSentAt
+                          ? `Recu le ${formatDateTime(request.pickupReminderSentAt)}`
+                          : "Notification"}
+                      </span>
+                    </div>
+                    <p>{request.pickupReminderMessage}</p>
+                    <div className="ticket-message-actions">
+                      {request.deliveryRequestStatus === "requested" ? (
+                        <span className="status-badge status-awaiting_deposit">
+                          Livreur demande le {formatDateTime(request.deliveryRequestedAt)}
+                        </span>
+                      ) : (
+                        <button
+                          className="picked-up-button"
+                          type="button"
+                          disabled={requestingDeliveryId === request.id}
+                          onClick={() => requestDeliveryForPickup(request)}
+                        >
+                          {requestingDeliveryId === request.id
+                            ? "Envoi..."
+                            : "Commander un livreur"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {request.ticketSentAt && request.ticketMessage && (
                   <div className="ticket-message-panel client-ticket-message">
                     <div>
@@ -3931,6 +4903,10 @@ function ClientPortal({
                 <strong>{clientProfile?.fullName || "-"}</strong>
               </article>
               <article className="report-card">
+                <span>Genre</span>
+                <strong>{getClientGenderLabel(clientProfile?.gender)}</strong>
+              </article>
+              <article className="report-card">
                 <span>Telephone</span>
                 <strong>{clientProfile?.phone || "-"}</strong>
               </article>
@@ -3952,6 +4928,9 @@ function ClientPortal({
           />
         </div>
       )}
+      <LegalLinks language={language} />
+      <LegalPageOverlay language={language} />
+      <CookieConsentPopup language={language} />
     </main>
   );
 }
@@ -4030,6 +5009,7 @@ function ClientRequestsView({ clientRequests, onSendTicketToClient, onUpdateClie
               <div className="client-detail-ticket-top">
                 <div>
                   <strong>{request.clientName}</strong>
+                <span>Genre: {getClientGenderLabel(request.clientGender)}</span>
                 <span>
                   {request.clientPhone} - {request.clientEmail}
                 </span>
@@ -4052,6 +5032,31 @@ function ClientRequestsView({ clientRequests, onSendTicketToClient, onUpdateClie
                 ))}
               </div>
               {request.note && <p>{request.note}</p>}
+              {request.confirmationMessage && (
+                <div className="ticket-message-panel client-confirmation-message">
+                  <div>
+                    <strong>Confirmation envoyee</strong>
+                    <span>
+                      {request.confirmationSentAt
+                        ? formatDateTime(request.confirmationSentAt)
+                        : CLIENT_REQUEST_STATUS_LABELS[request.status] || request.status}
+                    </span>
+                  </div>
+                  <p>{request.confirmationMessage}</p>
+                </div>
+              )}
+              {request.deliveryRequestStatus === "requested" && (
+                <div className="ticket-message-panel client-pickup-reminder">
+                  <div>
+                    <strong>Demande de livraison</strong>
+                    <span>{formatDateTime(request.deliveryRequestedAt)}</span>
+                  </div>
+                  <p>
+                    Le client souhaite qu'un livreur recupere son depot pret au retrait.
+                    Adresse de livraison: {request.deliveryAddress || request.collectionAddress}
+                  </p>
+                </div>
+              )}
               {request.ticketNumber && (
                 <div className="ticket-message-panel">
                   <div>
@@ -4084,7 +5089,7 @@ function ClientRequestsView({ clientRequests, onSendTicketToClient, onUpdateClie
                 <button
                   className="picked-up-button"
                   type="button"
-                  disabled={updatingRequestId === request.id}
+                  disabled={updatingRequestId === request.id || request.status !== "deposit_confirmed"}
                   onClick={() => updateStatus(request, "accepted")}
                 >
                   Accepter
@@ -4126,6 +5131,8 @@ function SupervisorDashboard({
   onCreateSupportTicket,
   databaseError,
   historyLoading,
+  language,
+  onLanguageChange,
   onLogout,
   orderHistory,
   pressingAnnouncements,
@@ -4142,7 +5149,9 @@ function SupervisorDashboard({
   return (
     <AppShell
       activeView={activeView}
+      language={language}
       menuItems={SUPERVISOR_MENU}
+      onLanguageChange={onLanguageChange}
       onLogout={onLogout}
       onSelectView={setActiveView}
       pressingName={pressingName}
@@ -4165,6 +5174,7 @@ function SupervisorDashboard({
 
       {(activeView === "reports" || activeView === "tickets") && (
         <TicketsReport
+          enablePeriodFilter={activeView === "tickets"}
           historyLoading={historyLoading}
           onSelectOrder={setSelectedOrder}
           orderHistory={orderHistory}
@@ -4173,6 +5183,15 @@ function SupervisorDashboard({
       )}
 
       {activeView === "stock" && <StockView orderHistory={orderHistory} />}
+
+      {activeView === "pressingFlow" && (
+        <PressingFlowView
+          historyLoading={historyLoading}
+          orderHistory={orderHistory}
+          pressingName={pressingName}
+          viewer="supervisor"
+        />
+      )}
 
       {activeView === "clients" && <ClientsReport orderHistory={orderHistory} />}
 
@@ -4195,11 +5214,18 @@ function SupervisorDashboard({
   );
 }
 
-function LoginPage({ clientInvitePressingId, clientInvitePressingName, onLogin }) {
+function LoginPage({
+  clientInvitePressingId,
+  clientInvitePressingName,
+  language,
+  onLanguageChange,
+  onLogin
+}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
+  const [clientGender, setClientGender] = useState("");
   const [isClientSignup, setIsClientSignup] = useState(Boolean(clientInvitePressingId));
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -4270,6 +5296,7 @@ function LoginPage({ clientInvitePressingId, clientInvitePressingName, onLogin }
         data: {
           role: "client",
           full_name: clientName.trim(),
+          gender: clientGender,
           phone: clientPhone.trim(),
           pressing_id: clientInvitePressingId,
           pressing_name: clientInvitePressingName
@@ -4293,6 +5320,7 @@ function LoginPage({ clientInvitePressingId, clientInvitePressingName, onLogin }
   }
 
   return (
+    <>
     <main className="login-shell">
       <section className="login-panel" aria-label="Connexion administrateur ou superviseur">
         <div>
@@ -4304,6 +5332,8 @@ function LoginPage({ clientInvitePressingId, clientInvitePressingName, onLogin }
               : "Acces reserve au comptoir, aux rapports et a l'historique."}
           </p>
         </div>
+
+        <LanguageSelector language={language} onLanguageChange={onLanguageChange} />
 
         {isClientInvite && (
           <div className="price-service-tabs" role="tablist" aria-label="Mode client">
@@ -4345,6 +5375,24 @@ function LoginPage({ clientInvitePressingId, clientInvitePressingName, onLogin }
                   }}
                   placeholder="Votre nom"
                 />
+              </label>
+
+              <label htmlFor="client-gender">
+                Genre
+                <select
+                  id="client-gender"
+                  value={clientGender}
+                  onChange={(event) => {
+                    setClientGender(event.target.value);
+                    setError("");
+                  }}
+                >
+                  {CLIENT_GENDER_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <label htmlFor="client-phone">
@@ -4399,14 +5447,19 @@ function LoginPage({ clientInvitePressingId, clientInvitePressingName, onLogin }
             {isSubmitting ? "Patientez..." : isClientSignup ? "Creer mon compte" : "Se connecter"}
           </button>
         </form>
+        <LegalLinks language={language} />
       </section>
     </main>
+    <LegalPageOverlay language={language} />
+    <CookieConsentPopup language={language} />
+    </>
   );
 }
 
 function App() {
   const [adminSession, setAdminSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
+  const [language, setLanguage] = useState(getStoredLanguage);
   const [articlePrices, setArticlePrices] = useState(getStoredArticlePrices);
   const [customArticles, setCustomArticles] = useState(getStoredCustomArticles);
   const [isPriceEditorOpen, setIsPriceEditorOpen] = useState(false);
@@ -4456,6 +5509,12 @@ function App() {
   const clientInvitePressingId = new URLSearchParams(window.location.search).get("client_pressing");
   const clientInvitePressingName =
     new URLSearchParams(window.location.search).get("pressing_name") || "Votre pressing";
+
+  function changeLanguage(nextLanguage) {
+    setLanguage(nextLanguage);
+    localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
+    document.documentElement.lang = nextLanguage;
+  }
 
   const total = useMemo(
     () => ticketItems.reduce((sum, item) => sum + item.price, 0),
@@ -4539,8 +5598,10 @@ function App() {
   }, [pickupQuery, orderHistory]);
   const adminClientRequestBadgeCount = pressingClientRequests.filter(
     (request) =>
-      request.status === "submitted" &&
-      new Date(request.createdAt || request.updatedAt || 0).getTime() > adminClientRequestsSeenAt
+      (request.status === "submitted" || request.deliveryRequestStatus === "requested") &&
+      new Date(
+        request.deliveryRequestedAt || request.updatedAt || request.createdAt || 0
+      ).getTime() > adminClientRequestsSeenAt
   ).length;
   const clientHistoryBadgeCount = clientRequests.filter(
     (request) =>
@@ -4573,6 +5634,10 @@ function App() {
       markAdminClientRequestsSeen();
     }
   }
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
 
   useEffect(() => {
     if (isSupabaseConfigured) {
@@ -4628,6 +5693,68 @@ function App() {
       markAdminClientRequestsSeen();
     }
   }, [activeAdminView, pressingClientRequests.length]);
+
+  useEffect(() => {
+    if (!isAdmin || !currentPressingId || pressingClientRequests.length === 0 || orderHistory.length === 0) {
+      return;
+    }
+
+    const ordersById = new Map(orderHistory.map((order) => [order.id, order]));
+    const ordersByTicketNumber = new Map(orderHistory.map((order) => [order.ticketNumber, order]));
+    const now = new Date().toISOString();
+    const reminderUpdates = pressingClientRequests
+      .map((request) => {
+        const order = ordersById.get(request.ticketId) || ordersByTicketNumber.get(request.ticketNumber);
+        const reminder = getPickupReminderForRequest(request, order);
+        const currentLevelRank = PICKUP_REMINDER_LEVELS[request.pickupReminderLevel] || 0;
+        const nextLevelRank = PICKUP_REMINDER_LEVELS[reminder?.level] || 0;
+
+        if (!reminder || nextLevelRank <= currentLevelRank) {
+          return null;
+        }
+
+        return {
+          id: request.id,
+          pickupReminderLevel: reminder.level,
+          pickupReminderMessage: reminder.message,
+          pickupReminderSentAt: now
+        };
+      })
+      .filter(Boolean);
+
+    if (reminderUpdates.length === 0) {
+      return;
+    }
+
+    setPressingClientRequests((current) =>
+      current.map((request) => {
+        const update = reminderUpdates.find((item) => item.id === request.id);
+        return update ? { ...request, ...update, updatedAt: update.pickupReminderSentAt } : request;
+      })
+    );
+
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    reminderUpdates.forEach((update) => {
+      supabase
+        .from("client_service_requests")
+        .update({
+          pickup_reminder_level: update.pickupReminderLevel,
+          pickup_reminder_message: update.pickupReminderMessage,
+          pickup_reminder_sent_at: update.pickupReminderSentAt,
+          updated_at: update.pickupReminderSentAt
+        })
+        .eq("pressing_id", currentPressingId)
+        .eq("id", update.id)
+        .then(({ error }) => {
+          if (error) {
+            setDatabaseError("Envoi d'une notification de retrait impossible dans Supabase.");
+          }
+        });
+    });
+  }, [currentPressingId, isAdmin, orderHistory, pressingClientRequests]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -4754,6 +5881,7 @@ function App() {
           user_id: adminSession.user.id,
           pressing_id: metadataPressingId,
           full_name: adminSession.user.user_metadata?.full_name || "Client",
+          gender: adminSession.user.user_metadata?.gender || "",
           email: adminSession.user.email,
           phone: adminSession.user.user_metadata?.phone || ""
         };
@@ -5188,6 +6316,7 @@ function App() {
       clientProfileId: clientProfile.id,
       clientUserId: adminSession.user.id,
       clientName: clientProfile.fullName,
+      clientGender: clientProfile.gender || "",
       clientEmail: clientProfile.email,
       clientPhone: clientProfile.phone,
       status: "submitted"
@@ -5220,9 +6349,59 @@ function App() {
     return { ok: true };
   }
 
+  async function requestPickupDelivery(requestId) {
+    const requestedAt = new Date().toISOString();
+    const request = clientRequests.find((item) => item.id === requestId);
+
+    if (!request) {
+      return { ok: false, message: "Demande introuvable." };
+    }
+
+    if (request.deliveryRequestStatus === "requested") {
+      return { ok: true, message: "Votre demande de livreur est deja enregistree." };
+    }
+
+    const requestUpdates = {
+      deliveryRequestStatus: "requested",
+      deliveryRequestedAt: requestedAt,
+      deliveryRequestNote: "Livraison demandee par le client depuis son compte.",
+      updatedAt: requestedAt
+    };
+
+    if (!isSupabaseConfigured) {
+      setClientRequests((current) =>
+        current.map((item) => (item.id === requestId ? { ...item, ...requestUpdates } : item))
+      );
+      return { ok: true, message: "Votre demande de livreur a ete envoyee au pressing." };
+    }
+
+    const { error } = await supabase
+      .from("client_service_requests")
+      .update({
+        delivery_request_status: "requested",
+        delivery_requested_at: requestedAt,
+        delivery_request_note: requestUpdates.deliveryRequestNote,
+        updated_at: requestedAt
+      })
+      .eq("client_user_id", adminSession.user.id)
+      .eq("id", requestId);
+
+    if (error) {
+      setDatabaseError("Demande de livreur impossible dans Supabase.");
+      return { ok: false, message: "Demande de livreur impossible dans Supabase." };
+    }
+
+    setClientRequests((current) =>
+      current.map((item) => (item.id === requestId ? { ...item, ...requestUpdates } : item))
+    );
+    setDatabaseError("");
+    return { ok: true, message: "Votre demande de livreur a ete envoyee au pressing." };
+  }
+
   async function updateClientRequestStatus(requestId, status) {
     const updatedAt = new Date().toISOString();
     const request = pressingClientRequests.find((item) => item.id === requestId);
+    const confirmationMessage = CLIENT_REQUEST_CONFIRMATION_MESSAGES[status] || "";
 
     if (!request) {
       return { ok: false, message: "Demande client introuvable." };
@@ -5304,6 +6483,12 @@ function App() {
     const requestUpdates = {
       status,
       updatedAt,
+      ...(confirmationMessage
+        ? {
+            confirmationMessage,
+            confirmationSentAt: updatedAt
+          }
+        : {}),
       ...(createdTicket
         ? {
             ticketId: createdTicket.id,
@@ -5316,6 +6501,12 @@ function App() {
     const databaseRequestUpdates = {
       status,
       updated_at: updatedAt,
+      ...(confirmationMessage
+        ? {
+            confirmation_message: confirmationMessage,
+            confirmation_sent_at: updatedAt
+          }
+        : {}),
       ...(createdTicket
         ? {
             ticket_id: createdTicket.id,
@@ -5360,11 +6551,13 @@ function App() {
       if (createdTicket) {
         setOrderHistory((current) => [createdTicket, ...current]);
       }
-      setDatabaseError(`Ticket cree, mais details non lies a la demande: ${error.message}`);
+      setDatabaseError(`Demande mise a jour, mais certains details ne sont pas lies: ${error.message}`);
       return {
         ok: true,
         ticketNumber: createdTicket?.ticketNumber,
-        warning: "Executez la mise a jour SQL pour enregistrer les details du ticket dans le compte client."
+        warning: createdTicket
+          ? "Executez la mise a jour SQL pour enregistrer les details du ticket dans le compte client."
+          : "Executez la mise a jour SQL pour enregistrer les messages de confirmation dans le compte client."
       };
     }
 
@@ -5962,6 +7155,8 @@ function App() {
       <LoginPage
         clientInvitePressingId={clientInvitePressingId}
         clientInvitePressingName={clientInvitePressingName}
+        language={language}
+        onLanguageChange={changeLanguage}
         onLogin={setAdminSession}
       />
     );
@@ -5974,8 +7169,11 @@ function App() {
         clientProfile={clientProfile}
         clientRequests={clientRequests}
         historyBadgeCount={clientHistoryBadgeCount}
+        language={language}
         onOpenHistory={markClientHistorySeen}
         onCreateClientRequest={createClientServiceRequest}
+        onRequestDelivery={requestPickupDelivery}
+        onLanguageChange={changeLanguage}
         onLogout={logoutAdmin}
         pressingName={getSessionPressingName(adminSession) || clientInvitePressingName}
       />
@@ -5987,8 +7185,10 @@ function App() {
       <PlatformDashboard
         databaseError={databaseError}
         historyLoading={historyLoading}
+        language={language}
         onCreatePressing={createPlatformPressing}
         onCreatePlatformAnnouncement={createPlatformAnnouncement}
+        onLanguageChange={changeLanguage}
         onLogout={logoutAdmin}
         onUpdateInvoiceStatus={updateInvoiceStatus}
         onUpdateEndClientStatus={updateEndClientStatus}
@@ -6017,7 +7217,9 @@ function App() {
       <SupervisorDashboard
         databaseError={databaseError}
         historyLoading={historyLoading}
+        language={language}
         onCreateSupportTicket={createSupportTicket}
+        onLanguageChange={changeLanguage}
         onLogout={logoutAdmin}
         orderHistory={orderHistory}
         pressingAnnouncements={pressingAnnouncements}
@@ -6037,7 +7239,9 @@ function App() {
       <AppShell
         activeView={activeAdminView}
         badgeCounts={{ clientRequests: adminClientRequestBadgeCount }}
+        language={language}
         menuItems={ADMIN_MENU}
+        onLanguageChange={changeLanguage}
         onLogout={logoutAdmin}
         onSelectView={selectAdminView}
         pressingName={currentPressingName}
@@ -6125,6 +7329,7 @@ function App() {
 
         {activeAdminView === "tickets" && (
           <TicketsReport
+            enablePeriodFilter
             historyLoading={historyLoading}
             onSelectOrder={setSelectedReportOrder}
             orderHistory={orderHistory}
@@ -6137,6 +7342,14 @@ function App() {
             clientRequests={pressingClientRequests}
             onSendTicketToClient={sendTicketToClientAccount}
             onUpdateClientRequestStatus={updateClientRequestStatus}
+          />
+        )}
+
+        {activeAdminView === "pressingFlow" && (
+          <PressingFlowView
+            historyLoading={historyLoading}
+            orderHistory={orderHistory}
+            pressingName={currentPressingName}
           />
         )}
 
@@ -6291,7 +7504,9 @@ function App() {
     <AppShell
       activeView={activeAdminView}
       badgeCounts={{ clientRequests: adminClientRequestBadgeCount }}
+      language={language}
       menuItems={ADMIN_MENU}
+      onLanguageChange={changeLanguage}
       onLogout={logoutAdmin}
       onSelectView={selectAdminView}
       pressingName={currentPressingName}
@@ -6306,9 +7521,9 @@ function App() {
               <h1>Depot client</h1>
             </div>
             <div className="operator-actions">
-              <div className="operator-badge">{ROLE_LABELS[currentRole] || "Admin"}</div>
+              <div className="operator-badge">{getRoleLabel(currentRole, language) || "Admin"}</div>
               <button className="logout-button" type="button" onClick={logoutAdmin}>
-                Deconnexion
+                {language === "en" ? "Log out" : "Deconnexion"}
               </button>
             </div>
           </div>
@@ -6467,7 +7682,7 @@ function App() {
         </div>
 
         <label className="phone-label" htmlFor="client-phone">
-          Telephone du client
+          Numero WhatsApp du client avec indicatif
         </label>
         <input
           id="client-phone"
@@ -6478,7 +7693,7 @@ function App() {
             setPhone(event.target.value.replace(/\D/g, "").slice(0, 14));
             setValidatedOrder(null);
           }}
-          placeholder="Ex: 0700000000"
+          placeholder="Ex: 2250700000000"
         />
 
         <div className="keypad" aria-label="Pave numerique tactile">

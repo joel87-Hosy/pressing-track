@@ -227,6 +227,7 @@ create table if not exists client_profiles (
   user_id uuid not null unique,
   pressing_id uuid not null references pressings(id),
   full_name text not null,
+  gender text,
   email text not null,
   phone text not null,
   status text not null default 'active',
@@ -235,6 +236,7 @@ create table if not exists client_profiles (
 );
 
 alter table client_profiles add column if not exists status text not null default 'active';
+alter table client_profiles add column if not exists gender text;
 
 create table if not exists client_service_requests (
   id uuid primary key default gen_random_uuid(),
@@ -242,6 +244,7 @@ create table if not exists client_service_requests (
   client_profile_id uuid not null references client_profiles(id),
   client_user_id uuid not null,
   client_name text not null,
+  client_gender text,
   client_email text not null,
   client_phone text not null,
   service_type text not null,
@@ -262,6 +265,15 @@ alter table client_service_requests add column if not exists ticket_number text;
 alter table client_service_requests add column if not exists ticket_message text;
 alter table client_service_requests add column if not exists ticket_whatsapp_url text;
 alter table client_service_requests add column if not exists ticket_sent_at timestamptz;
+alter table client_service_requests add column if not exists confirmation_message text;
+alter table client_service_requests add column if not exists confirmation_sent_at timestamptz;
+alter table client_service_requests add column if not exists client_gender text;
+alter table client_service_requests add column if not exists pickup_reminder_level text;
+alter table client_service_requests add column if not exists pickup_reminder_message text;
+alter table client_service_requests add column if not exists pickup_reminder_sent_at timestamptz;
+alter table client_service_requests add column if not exists delivery_request_status text;
+alter table client_service_requests add column if not exists delivery_requested_at timestamptz;
+alter table client_service_requests add column if not exists delivery_request_note text;
 
 create table if not exists article_prices (
   pressing_id uuid references pressings(id),
@@ -357,6 +369,7 @@ drop policy if exists "Client profile update" on client_profiles;
 drop policy if exists "Client request read" on client_service_requests;
 drop policy if exists "Client request insert" on client_service_requests;
 drop policy if exists "Tenant client request update" on client_service_requests;
+drop policy if exists "Client request delivery update" on client_service_requests;
 drop policy if exists "Profile avatar public read" on storage.objects;
 drop policy if exists "Profile avatar owner insert" on storage.objects;
 drop policy if exists "Profile avatar owner update" on storage.objects;
@@ -557,6 +570,12 @@ on client_service_requests for update
 to authenticated
 using (public.can_write_pressing(pressing_id))
 with check (public.can_write_pressing(pressing_id));
+
+create policy "Client request delivery update"
+on client_service_requests for update
+to authenticated
+using (client_user_id = auth.uid())
+with check (client_user_id = auth.uid());
 
 -- Creation d'un nouveau pressing client:
 -- 1. Executez cette requete en changeant le nom et l'email proprietaire.
