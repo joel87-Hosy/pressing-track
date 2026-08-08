@@ -35,9 +35,7 @@ const PRICE_OPTIONS = [
   { id: FANICO_PRICE_OPTION_ID, label: "Fanico" }
 ];
 const DEPOSIT_PRICE_OPTIONS = PRICE_OPTIONS.filter((option) => option.id !== FANICO_PRICE_OPTION_ID);
-const BUNDLE_PRICE_OPTION_IDS = new Set(
-  PRICE_OPTIONS.filter((option) => option.id !== DEFAULT_PRICE_OPTION_ID).map((option) => option.id)
-);
+const BUNDLE_PRICE_OPTION_IDS = new Set([FANICO_PRICE_OPTION_ID]);
 const PRICE_OPTION_IDS = new Set(PRICE_OPTIONS.map((option) => option.id));
 
 const MOCK_RESERVES = [
