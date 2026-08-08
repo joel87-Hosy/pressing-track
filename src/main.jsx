@@ -29,17 +29,15 @@ const FANICO_PRICE_OPTION_ID = "fanico";
 const FANICO_BUNDLE_PREFIX = "bundle-";
 const PRICE_OPTION_SEPARATOR = "__";
 const PRICE_OPTIONS = [
-  { id: "normal", label: "Lavage normal" },
-  { id: "dry_cleaning", label: "Lavage a sec" },
-  { id: "steam", label: "Lavage a vapeur" },
+  { id: "normal", label: "Lavage normal", defaultMultiplier: 1 },
+  { id: "dry_cleaning", label: "Lavage a sec", defaultMultiplier: 1.5 },
+  { id: "steam", label: "Lavage a vapeur", defaultMultiplier: 1.25 },
   { id: FANICO_PRICE_OPTION_ID, label: "Fanico" }
 ];
-const PRICE_OPTION_DEFAULT_MULTIPLIERS = {
-  [DEFAULT_PRICE_OPTION_ID]: 1,
-  dry_cleaning: 1.5,
-  steam: 1.25
-};
 const DEPOSIT_PRICE_OPTIONS = PRICE_OPTIONS.filter((option) => option.id !== FANICO_PRICE_OPTION_ID);
+const BUNDLE_PRICE_OPTION_IDS = new Set(
+  PRICE_OPTIONS.filter((option) => option.id !== DEFAULT_PRICE_OPTION_ID).map((option) => option.id)
+);
 const PRICE_OPTION_IDS = new Set(PRICE_OPTIONS.map((option) => option.id));
 
 const MOCK_RESERVES = [
@@ -769,7 +767,7 @@ function getOptionPrices(articlePrices, priceOptionId) {
 }
 
 function getDefaultPriceForOption(normalPrice, priceOptionId) {
-  const multiplier = PRICE_OPTION_DEFAULT_MULTIPLIERS[priceOptionId] || 1;
+  const multiplier = PRICE_OPTIONS.find((option) => option.id === priceOptionId)?.defaultMultiplier || 1;
   return Math.round((normalPrice * multiplier) / 100) * 100;
 }
 
@@ -793,6 +791,20 @@ function getFanicoBundleId(quantity) {
 
 function getFanicoBundleQuantity(bundleId) {
   return Number(bundleId.replace(FANICO_BUNDLE_PREFIX, ""));
+}
+
+function getBundleRowsForOption(articlePrices, priceOptionId) {
+  const bundlePrices = getOptionPrices(articlePrices, priceOptionId);
+
+  return Object.entries(bundlePrices)
+    .filter(([bundleId]) => bundleId.startsWith(FANICO_BUNDLE_PREFIX))
+    .map(([bundleId, price]) => ({
+      id: bundleId,
+      quantity: getFanicoBundleQuantity(bundleId),
+      price
+    }))
+    .filter((row) => Number.isFinite(row.quantity) && row.quantity > 0)
+    .sort((a, b) => a.quantity - b.quantity);
 }
 
 function getWeekKey(date) {
@@ -4794,7 +4806,7 @@ function ClientPortal({
   const [isClientMenuOpen, setIsClientMenuOpen] = useState(false);
   const [serviceType, setServiceType] = useState(DEFAULT_PRICE_OPTION_ID);
   const [articleId, setArticleId] = useState(MOCK_ARTICLES[0].id);
-  const [fanicoBundleId, setFanicoBundleId] = useState("");
+  const [serviceBundleId, setServiceBundleId] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [items, setItems] = useState([]);
   const [collectionAddress, setCollectionAddress] = useState("");
@@ -4807,26 +4819,23 @@ function ClientPortal({
   const [locatingAddress, setLocatingAddress] = useState("");
   const serviceOptions = PRICE_OPTIONS;
   const isClientSuspended = clientProfile?.status === "suspended";
-  const clientFanicoRows = useMemo(() => {
-    const fanicoPrices = getOptionPrices(clientArticlePrices, FANICO_PRICE_OPTION_ID);
-
-    return Object.entries(fanicoPrices)
-      .filter(([bundleId]) => bundleId.startsWith(FANICO_BUNDLE_PREFIX))
-      .map(([bundleId, price]) => ({
-        id: bundleId,
-        quantity: getFanicoBundleQuantity(bundleId),
-        price
-      }))
-      .filter((row) => Number.isFinite(row.quantity) && row.quantity > 0)
-      .sort((a, b) => a.quantity - b.quantity);
-  }, [clientArticlePrices]);
-  const clientPricedArticles = MOCK_ARTICLES.map((article) => ({
-    ...article,
-    price: getArticlePriceForOption(clientArticlePrices, article, serviceType)
-  }));
+  const selectedServiceOption = serviceOptions.find((option) => option.id === serviceType) || serviceOptions[0];
+  const isServiceBundleType = BUNDLE_PRICE_OPTION_IDS.has(serviceType);
+  const clientServiceBundleRows = useMemo(
+    () => getBundleRowsForOption(clientArticlePrices, serviceType),
+    [clientArticlePrices, serviceType]
+  );
+  const clientPricedArticles = useMemo(
+    () =>
+      MOCK_ARTICLES.map((article) => ({
+        ...article,
+        price: getArticlePriceForOption(clientArticlePrices, article, serviceType)
+      })),
+    [clientArticlePrices, serviceType]
+  );
   const selectedArticle = clientPricedArticles.find((article) => article.id === articleId) || clientPricedArticles[0];
-  const selectedFanicoBundle =
-    clientFanicoRows.find((row) => row.id === fanicoBundleId) || clientFanicoRows[0];
+  const selectedServiceBundle =
+    clientServiceBundleRows.find((row) => row.id === serviceBundleId) || clientServiceBundleRows[0];
   const estimatedTotal = items.reduce((sum, item) => sum + item.total, 0);
 
   function selectClientView(viewId) {
@@ -4839,11 +4848,11 @@ function ClientPortal({
   }
 
   function addRequestItem() {
-    if (serviceType === FANICO_PRICE_OPTION_ID) {
-      if (!selectedFanicoBundle) {
+    if (isServiceBundleType) {
+      if (!selectedServiceBundle) {
         setRequestStatus({
           type: "error",
-          message: "Aucun forfait Fanico n'est configure par ce pressing."
+          message: `Aucun forfait ${selectedServiceOption.label} n'est configure par ce pressing.`
         });
         return;
       }
@@ -4852,13 +4861,13 @@ function ClientPortal({
         ...current,
         {
           lineId: crypto.randomUUID(),
-          articleId: selectedFanicoBundle.id,
-          name: `Fanico ${selectedFanicoBundle.quantity} vetement${
-            selectedFanicoBundle.quantity > 1 ? "s" : ""
+          articleId: selectedServiceBundle.id,
+          name: `${selectedServiceOption.label} ${selectedServiceBundle.quantity} vetement${
+            selectedServiceBundle.quantity > 1 ? "s" : ""
           }`,
-          quantity: selectedFanicoBundle.quantity,
-          unitPrice: selectedFanicoBundle.price,
-          total: selectedFanicoBundle.price
+          quantity: selectedServiceBundle.quantity,
+          unitPrice: selectedServiceBundle.price,
+          total: selectedServiceBundle.price
         }
       ]);
       setRequestStatus({ type: "", message: "" });
@@ -5077,21 +5086,21 @@ function ClientPortal({
           ))}
         </div>
 
-        {serviceType === FANICO_PRICE_OPTION_ID ? (
+        {isServiceBundleType ? (
           <div className="article-preview-list">
-            {clientFanicoRows.length === 0 ? (
+            {clientServiceBundleRows.length === 0 ? (
               <div className="empty-history">
-                Aucun tarif Fanico n'est encore configure par ce pressing.
+                Aucun forfait {selectedServiceOption.label} n'est encore configure par ce pressing.
               </div>
             ) : (
-              clientFanicoRows.map((row) => (
+              clientServiceBundleRows.map((row) => (
                 <article className="article-preview-item" key={row.id}>
                   <span className="mini-icon" aria-hidden="true">
-                    FA
+                    {getArticleIcon(selectedServiceOption.label)}
                   </span>
                   <div>
                     <strong>
-                      Fanico {row.quantity} vetement{row.quantity > 1 ? "s" : ""}
+                      {selectedServiceOption.label} {row.quantity} vetement{row.quantity > 1 ? "s" : ""}
                     </strong>
                     <small>{formatMoney(row.price)}</small>
                   </div>
@@ -5134,17 +5143,17 @@ function ClientPortal({
         )}
 
         <form className="platform-form" onSubmit={submitClientRequest}>
-          {serviceType === FANICO_PRICE_OPTION_ID ? (
+          {isServiceBundleType ? (
             <label>
-              Forfait Fanico
+              Forfait {selectedServiceOption.label}
               <select
-                value={selectedFanicoBundle?.id || ""}
-                onChange={(event) => setFanicoBundleId(event.target.value)}
+                value={selectedServiceBundle?.id || ""}
+                onChange={(event) => setServiceBundleId(event.target.value)}
               >
-                {clientFanicoRows.length === 0 ? (
-                  <option value="">Aucun forfait Fanico configure</option>
+                {clientServiceBundleRows.length === 0 ? (
+                  <option value="">Aucun forfait {selectedServiceOption.label} configure</option>
                 ) : (
-                  clientFanicoRows.map((row) => (
+                  clientServiceBundleRows.map((row) => (
                     <option key={row.id} value={row.id}>
                       {row.quantity} vetement{row.quantity > 1 ? "s" : ""} - {formatMoney(row.price)}
                     </option>
@@ -6015,19 +6024,16 @@ function App() {
       };
     });
   }, [articlePrices, selectedArticle]);
-  const fanicoRows = useMemo(() => {
-    const fanicoPrices = getOptionPrices(articlePrices, FANICO_PRICE_OPTION_ID);
-
-    return Object.entries(fanicoPrices)
-      .filter(([bundleId]) => bundleId.startsWith(FANICO_BUNDLE_PREFIX))
-      .map(([bundleId, price]) => ({
-        id: bundleId,
-        quantity: getFanicoBundleQuantity(bundleId),
-        price
-      }))
-      .filter((row) => Number.isFinite(row.quantity) && row.quantity > 0)
-      .sort((a, b) => a.quantity - b.quantity);
-  }, [articlePrices]);
+  const fanicoRows = useMemo(
+    () => getBundleRowsForOption(articlePrices, FANICO_PRICE_OPTION_ID),
+    [articlePrices]
+  );
+  const activeBundleRows = useMemo(
+    () => getBundleRowsForOption(articlePrices, activePriceOption),
+    [activePriceOption, articlePrices]
+  );
+  const activePriceOptionLabel = getPriceOptionLabel(activePriceOption);
+  const isActiveBundlePriceOption = BUNDLE_PRICE_OPTION_IDS.has(activePriceOption);
 
   const canValidate = ticketItems.length > 0 && phone.length >= 8;
   const visibleHistory = useMemo(() => {
@@ -7173,7 +7179,7 @@ function App() {
     saveArticlePrice(articleId, safePrice, priceOptionId);
   }
 
-  async function saveFanicoBundlePrice(bundleId, quantity, price) {
+  async function saveServiceBundlePrice(priceOptionId, bundleId, quantity, price) {
     if (!isSupabaseConfigured || !currentPressingId) {
       return true;
     }
@@ -7183,7 +7189,7 @@ function App() {
       .upsert(
         {
           pressing_id: currentPressingId,
-          article_id: getPriceRowId(FANICO_PRICE_OPTION_ID, bundleId),
+          article_id: getPriceRowId(priceOptionId, bundleId),
           article_name: `${quantity} vetements`,
           price,
           updated_at: new Date().toISOString()
@@ -7192,7 +7198,7 @@ function App() {
       );
 
     if (error) {
-      setDatabaseError("Sauvegarde du tarif Fanico echouee dans Supabase.");
+      setDatabaseError(`Sauvegarde du forfait ${getPriceOptionLabel(priceOptionId)} echouee dans Supabase.`);
       return false;
     }
 
@@ -7200,19 +7206,19 @@ function App() {
     return true;
   }
 
-  async function upsertFanicoBundle(event) {
+  async function upsertServiceBundle(event) {
     event.preventDefault();
 
     const quantityValue = Number(fanicoQuantity.replace(/\D/g, ""));
     const priceValue = Number(fanicoPrice.replace(/\D/g, ""));
 
     if (!quantityValue || !priceValue) {
-      setDatabaseError("Saisissez une quantite et un prix Fanico valides.");
+      setDatabaseError("Saisissez une quantite et un prix de forfait valides.");
       return;
     }
 
     const bundleId = getFanicoBundleId(quantityValue);
-    const saved = await saveFanicoBundlePrice(bundleId, quantityValue, priceValue);
+    const saved = await saveServiceBundlePrice(activePriceOption, bundleId, quantityValue, priceValue);
 
     if (!saved) {
       return;
@@ -7220,8 +7226,8 @@ function App() {
 
     setArticlePrices((current) => ({
       ...current,
-      [FANICO_PRICE_OPTION_ID]: {
-        ...getOptionPrices(current, FANICO_PRICE_OPTION_ID),
+      [activePriceOption]: {
+        ...getOptionPrices(current, activePriceOption),
         [bundleId]: priceValue
       }
     }));
@@ -7229,14 +7235,14 @@ function App() {
     setFanicoPrice("");
   }
 
-  async function deleteFanicoBundle(bundleId) {
+  async function deleteServiceBundle(priceOptionId, bundleId) {
     setArticlePrices((current) => {
-      const nextFanicoPrices = { ...getOptionPrices(current, FANICO_PRICE_OPTION_ID) };
-      delete nextFanicoPrices[bundleId];
+      const nextBundlePrices = { ...getOptionPrices(current, priceOptionId) };
+      delete nextBundlePrices[bundleId];
 
       return {
         ...current,
-        [FANICO_PRICE_OPTION_ID]: nextFanicoPrices
+        [priceOptionId]: nextBundlePrices
       };
     });
 
@@ -7248,10 +7254,10 @@ function App() {
       .from("article_prices")
       .delete()
       .eq("pressing_id", currentPressingId)
-      .eq("article_id", getPriceRowId(FANICO_PRICE_OPTION_ID, bundleId));
+      .eq("article_id", getPriceRowId(priceOptionId, bundleId));
 
     if (error) {
-      setDatabaseError("Suppression du tarif Fanico echouee dans Supabase.");
+      setDatabaseError(`Suppression du forfait ${getPriceOptionLabel(priceOptionId)} echouee dans Supabase.`);
       return;
     }
 
@@ -7274,12 +7280,12 @@ function App() {
       return;
     }
 
-    if (priceOptionId === FANICO_PRICE_OPTION_ID) {
+    if (BUNDLE_PRICE_OPTION_IDS.has(priceOptionId)) {
       const { error } = await supabase
         .from("article_prices")
         .delete()
         .eq("pressing_id", currentPressingId)
-        .like("article_id", `${FANICO_PRICE_OPTION_ID}${PRICE_OPTION_SEPARATOR}%`);
+        .like("article_id", `${priceOptionId}${PRICE_OPTION_SEPARATOR}%`);
 
       if (error) {
         setDatabaseError("Reinitialisation des prix Supabase echouee.");
@@ -7840,7 +7846,7 @@ function App() {
                 type="button"
                 onClick={() => resetArticlePrices(activePriceOption)}
               >
-                {activePriceOption === FANICO_PRICE_OPTION_ID ? "Vider Fanico" : "Prix par defaut"}
+                {isActiveBundlePriceOption ? `Vider ${activePriceOptionLabel}` : "Prix par defaut"}
               </button>
             </div>
 
@@ -7861,13 +7867,13 @@ function App() {
               ))}
             </div>
 
-            {activePriceOption === FANICO_PRICE_OPTION_ID ? (
+            {isActiveBundlePriceOption ? (
               <div className="fanico-pricing-panel">
                 <div className="fanico-pricing-note">
-                  Ajoutez autant de cas que necessaire: 5, 10, 15, 20 vetements ou plus.
+                  Ajoutez les forfaits {activePriceOptionLabel}: 5, 10, 15, 20 vetements ou plus.
                 </div>
 
-                <form className="fanico-price-form" onSubmit={upsertFanicoBundle}>
+                <form className="fanico-price-form" onSubmit={upsertServiceBundle}>
                   <label htmlFor="fanico-quantity">
                     Nombre de vetements
                     <input
@@ -7907,10 +7913,10 @@ function App() {
                 </div>
 
                 <div className="fanico-price-list">
-                  {fanicoRows.length === 0 ? (
-                    <div className="empty-history">Aucun tarif Fanico defini.</div>
+                  {activeBundleRows.length === 0 ? (
+                    <div className="empty-history">Aucun forfait {activePriceOptionLabel} defini.</div>
                   ) : (
-                    fanicoRows.map((row) => (
+                    activeBundleRows.map((row) => (
                       <article className="fanico-price-item" key={row.id}>
                         <div>
                           <strong>
@@ -7918,7 +7924,7 @@ function App() {
                           </strong>
                           <small>{formatMoney(row.price)}</small>
                         </div>
-                        <button type="button" onClick={() => deleteFanicoBundle(row.id)}>
+                        <button type="button" onClick={() => deleteServiceBundle(activePriceOption, row.id)}>
                           Supprimer
                         </button>
                       </article>
