@@ -763,6 +763,16 @@ function getOptionPrices(articlePrices, priceOptionId) {
   return articlePrices[priceOptionId] || {};
 }
 
+function getArticlePriceForOption(articlePrices, article, priceOptionId) {
+  const normalPrice = getOptionPrices(articlePrices, DEFAULT_PRICE_OPTION_ID)[article.id] ?? article.price;
+
+  if (priceOptionId === DEFAULT_PRICE_OPTION_ID) {
+    return normalPrice;
+  }
+
+  return getOptionPrices(articlePrices, priceOptionId)[article.id] ?? normalPrice;
+}
+
 function getPriceOptionLabel(priceOptionId) {
   return PRICE_OPTIONS.find((option) => option.id === priceOptionId)?.label || "Lavage normal";
 }
@@ -4787,7 +4797,6 @@ function ClientPortal({
   const [locatingAddress, setLocatingAddress] = useState("");
   const serviceOptions = PRICE_OPTIONS;
   const isClientSuspended = clientProfile?.status === "suspended";
-  const selectedOptionPrices = getOptionPrices(clientArticlePrices, serviceType);
   const clientFanicoRows = useMemo(() => {
     const fanicoPrices = getOptionPrices(clientArticlePrices, FANICO_PRICE_OPTION_ID);
 
@@ -4803,10 +4812,7 @@ function ClientPortal({
   }, [clientArticlePrices]);
   const clientPricedArticles = MOCK_ARTICLES.map((article) => ({
     ...article,
-    price:
-      serviceType === DEFAULT_PRICE_OPTION_ID
-        ? getOptionPrices(clientArticlePrices, DEFAULT_PRICE_OPTION_ID)[article.id] ?? article.price
-        : selectedOptionPrices[article.id] ?? 0
+    price: getArticlePriceForOption(clientArticlePrices, article, serviceType)
   }));
   const selectedArticle = clientPricedArticles.find((article) => article.id === articleId) || clientPricedArticles[0];
   const selectedFanicoBundle =
@@ -5966,7 +5972,6 @@ function App() {
     [ticketItems]
   );
   const normalArticlePrices = getOptionPrices(articlePrices, DEFAULT_PRICE_OPTION_ID);
-  const activeArticlePrices = getOptionPrices(articlePrices, activePriceOption);
   const pricedArticles = useMemo(
     () => [
       ...MOCK_ARTICLES.map((article) => ({
@@ -5984,12 +5989,9 @@ function App() {
     () =>
       pricedArticles.map((article) => ({
         ...article,
-        price:
-          activePriceOption === DEFAULT_PRICE_OPTION_ID
-            ? article.price
-            : activeArticlePrices[article.id] ?? 0
+        price: getArticlePriceForOption(articlePrices, article, activePriceOption)
       })),
-    [activeArticlePrices, activePriceOption, pricedArticles]
+    [activePriceOption, articlePrices, pricedArticles]
   );
   const selectedArticlePriceOptions = useMemo(() => {
     if (!selectedArticle) {
@@ -5998,10 +6000,7 @@ function App() {
 
     return DEPOSIT_PRICE_OPTIONS.map((option) => {
       const optionPrices = getOptionPrices(articlePrices, option.id);
-      const price =
-        option.id === DEFAULT_PRICE_OPTION_ID
-          ? selectedArticle.price
-          : optionPrices[selectedArticle.id] ?? 0;
+      const price = optionPrices[selectedArticle.id] ?? selectedArticle.price;
 
       return {
         ...option,
