@@ -34,6 +34,11 @@ const PRICE_OPTIONS = [
   { id: "steam", label: "Lavage a vapeur" },
   { id: FANICO_PRICE_OPTION_ID, label: "Fanico" }
 ];
+const PRICE_OPTION_DEFAULT_MULTIPLIERS = {
+  [DEFAULT_PRICE_OPTION_ID]: 1,
+  dry_cleaning: 1.5,
+  steam: 1.25
+};
 const DEPOSIT_PRICE_OPTIONS = PRICE_OPTIONS.filter((option) => option.id !== FANICO_PRICE_OPTION_ID);
 const PRICE_OPTION_IDS = new Set(PRICE_OPTIONS.map((option) => option.id));
 
@@ -763,6 +768,11 @@ function getOptionPrices(articlePrices, priceOptionId) {
   return articlePrices[priceOptionId] || {};
 }
 
+function getDefaultPriceForOption(normalPrice, priceOptionId) {
+  const multiplier = PRICE_OPTION_DEFAULT_MULTIPLIERS[priceOptionId] || 1;
+  return Math.round((normalPrice * multiplier) / 100) * 100;
+}
+
 function getArticlePriceForOption(articlePrices, article, priceOptionId) {
   const normalPrice = getOptionPrices(articlePrices, DEFAULT_PRICE_OPTION_ID)[article.id] ?? article.price;
 
@@ -770,7 +780,7 @@ function getArticlePriceForOption(articlePrices, article, priceOptionId) {
     return normalPrice;
   }
 
-  return getOptionPrices(articlePrices, priceOptionId)[article.id] ?? normalPrice;
+  return getOptionPrices(articlePrices, priceOptionId)[article.id] ?? getDefaultPriceForOption(normalPrice, priceOptionId);
 }
 
 function getPriceOptionLabel(priceOptionId) {
@@ -5999,12 +6009,9 @@ function App() {
     }
 
     return DEPOSIT_PRICE_OPTIONS.map((option) => {
-      const optionPrices = getOptionPrices(articlePrices, option.id);
-      const price = optionPrices[selectedArticle.id] ?? selectedArticle.price;
-
       return {
         ...option,
-        price
+        price: getArticlePriceForOption(articlePrices, selectedArticle, option.id)
       };
     });
   }, [articlePrices, selectedArticle]);
