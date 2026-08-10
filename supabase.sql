@@ -43,12 +43,28 @@ as $$
   select coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '');
 $$;
 
+create or replace function current_account_status()
+returns text
+language sql
+stable
+as $$
+  select coalesce(auth.jwt() -> 'app_metadata' ->> 'account_status', 'active');
+$$;
+
+create or replace function is_account_active()
+returns boolean
+language sql
+stable
+as $$
+  select public.current_account_status() <> 'suspended';
+$$;
+
 create or replace function is_platform_admin()
 returns boolean
 language sql
 stable
 as $$
-  select public.current_app_role() = 'platform_admin';
+  select public.current_app_role() = 'platform_admin' and public.is_account_active();
 $$;
 
 create or replace function is_admin()
@@ -56,7 +72,9 @@ returns boolean
 language sql
 stable
 as $$
-  select public.current_app_role() = 'admin' and public.current_pressing_id() is not null;
+  select public.current_app_role() = 'admin'
+    and public.current_pressing_id() is not null
+    and public.is_account_active();
 $$;
 
 create or replace function can_read_reports()
@@ -65,7 +83,11 @@ language sql
 stable
 as $$
   select public.is_platform_admin()
-    or (public.current_app_role() in ('admin', 'supervisor') and public.current_pressing_id() is not null);
+    or (
+      public.current_app_role() in ('admin', 'supervisor')
+      and public.current_pressing_id() is not null
+      and public.is_account_active()
+    );
 $$;
 
 create or replace function can_read_pressing(target_pressing_id uuid)
@@ -94,9 +116,255 @@ select
   users.last_sign_in_at,
   users.raw_app_meta_data ->> 'role' as role,
   nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid as pressing_id,
-  users.raw_app_meta_data ->> 'pressing_name' as pressing_name
+  users.raw_app_meta_data ->> 'pressing_name' as pressing_name,
+  coalesce(users.raw_app_meta_data ->> 'account_status', 'active') as account_status
 from auth.users
 where public.is_platform_admin();
+
+create or replace view tenant_user_accounts as
+select
+  users.id,
+  users.email,
+  users.created_at,
+  users.last_sign_in_at,
+  users.raw_app_meta_data ->> 'role' as role,
+  coalesce(users.raw_app_meta_data ->> 'account_status', 'active') as account_status,
+  nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid as pressing_id,
+  users.raw_app_meta_data ->> 'pressing_name' as pressing_name
+from auth.users
+where public.is_platform_admin()
+  or (
+    public.current_app_role() in ('admin', 'supervisor')
+    and public.current_pressing_id() is not null
+    and public.is_account_active()
+    and nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid = public.current_pressing_id()
+  );
+
+create or replace function create_tenant_staff_account(
+  staff_email text,
+  staff_password text,
+  staff_role text default 'admin'
+)
+returns table (
+  id uuid,
+  email text,
+  created_at timestamptz,
+  last_sign_in_at timestamptz,
+  role text,
+  account_status text,
+  pressing_id uuid,
+  pressing_name text
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  tenant_id uuid;
+  tenant_name text;
+  normalized_email text;
+  target_user_id uuid;
+begin
+  tenant_id := public.current_pressing_id();
+  normalized_email := lower(trim(staff_email));
+
+  if not (public.is_platform_admin() or (public.current_app_role() = 'supervisor' and public.is_account_active())) then
+    raise exception 'supervisor role required' using errcode = '42501';
+  end if;
+
+  if tenant_id is null then
+    raise exception 'pressing_id required' using errcode = '42501';
+  end if;
+
+  if staff_role not in ('admin', 'supervisor') then
+    raise exception 'invalid staff role' using errcode = '22023';
+  end if;
+
+  if normalized_email = '' or length(staff_password) < 6 then
+    raise exception 'valid email and password required' using errcode = '22023';
+  end if;
+
+  select name into tenant_name
+  from public.pressings
+  where pressings.id = tenant_id;
+
+  if tenant_name is null then
+    raise exception 'pressing not found' using errcode = '42501';
+  end if;
+
+  select users.id into target_user_id
+  from auth.users
+  where lower(users.email) = normalized_email
+  limit 1;
+
+  if target_user_id is not null then
+    if coalesce((select raw_app_meta_data ->> 'pressing_id' from auth.users where users.id = target_user_id), tenant_id::text) <> tenant_id::text then
+      raise exception 'user already belongs to another pressing' using errcode = '42501';
+    end if;
+
+    update auth.users
+    set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb)
+          || jsonb_build_object(
+            'role', staff_role,
+            'pressing_id', tenant_id::text,
+            'pressing_name', tenant_name,
+            'account_status', 'active'
+          ),
+        updated_at = now()
+    where users.id = target_user_id;
+  else
+    target_user_id := gen_random_uuid();
+
+    insert into auth.users (
+      id,
+      aud,
+      role,
+      email,
+      encrypted_password,
+      email_confirmed_at,
+      raw_app_meta_data,
+      raw_user_meta_data,
+      created_at,
+      updated_at
+    )
+    values (
+      target_user_id,
+      'authenticated',
+      'authenticated',
+      normalized_email,
+      crypt(staff_password, gen_salt('bf')),
+      now(),
+      jsonb_build_object(
+        'role', staff_role,
+        'pressing_id', tenant_id::text,
+        'pressing_name', tenant_name,
+        'account_status', 'active'
+      ),
+      jsonb_build_object('created_by_supervisor', auth.uid()::text),
+      now(),
+      now()
+    );
+
+    insert into auth.identities (
+      provider_id,
+      user_id,
+      identity_data,
+      provider,
+      last_sign_in_at,
+      created_at,
+      updated_at
+    )
+    values (
+      target_user_id::text,
+      target_user_id,
+      jsonb_build_object(
+        'sub', target_user_id::text,
+        'email', normalized_email,
+        'email_verified', true,
+        'phone_verified', false
+      ),
+      'email',
+      now(),
+      now(),
+      now()
+    )
+    on conflict (provider, provider_id) do nothing;
+  end if;
+
+  return query
+  select
+    users.id,
+    users.email,
+    users.created_at,
+    users.last_sign_in_at,
+    users.raw_app_meta_data ->> 'role',
+    coalesce(users.raw_app_meta_data ->> 'account_status', 'active'),
+    nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid,
+    users.raw_app_meta_data ->> 'pressing_name'
+  from auth.users
+  where users.id = target_user_id;
+end;
+$$;
+
+create or replace function update_tenant_staff_access(
+  target_user_id uuid,
+  staff_role text,
+  staff_account_status text
+)
+returns table (
+  id uuid,
+  email text,
+  created_at timestamptz,
+  last_sign_in_at timestamptz,
+  role text,
+  account_status text,
+  pressing_id uuid,
+  pressing_name text
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  tenant_id uuid;
+  tenant_name text;
+begin
+  tenant_id := public.current_pressing_id();
+
+  if not (public.is_platform_admin() or (public.current_app_role() = 'supervisor' and public.is_account_active())) then
+    raise exception 'supervisor role required' using errcode = '42501';
+  end if;
+
+  if tenant_id is null then
+    raise exception 'pressing_id required' using errcode = '42501';
+  end if;
+
+  if target_user_id = auth.uid() then
+    raise exception 'self access update is not allowed here' using errcode = '42501';
+  end if;
+
+  if staff_role not in ('admin', 'supervisor') then
+    raise exception 'invalid staff role' using errcode = '22023';
+  end if;
+
+  if staff_account_status not in ('active', 'suspended') then
+    raise exception 'invalid account status' using errcode = '22023';
+  end if;
+
+  select name into tenant_name
+  from public.pressings
+  where pressings.id = tenant_id;
+
+  update auth.users
+  set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb)
+        || jsonb_build_object(
+          'role', staff_role,
+          'pressing_id', tenant_id::text,
+          'pressing_name', tenant_name,
+          'account_status', staff_account_status
+        ),
+      updated_at = now()
+  where users.id = target_user_id
+    and nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid = tenant_id;
+
+  if not found then
+    raise exception 'user not found in this pressing' using errcode = '42501';
+  end if;
+
+  return query
+  select
+    users.id,
+    users.email,
+    users.created_at,
+    users.last_sign_in_at,
+    users.raw_app_meta_data ->> 'role',
+    coalesce(users.raw_app_meta_data ->> 'account_status', 'active'),
+    nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid,
+    users.raw_app_meta_data ->> 'pressing_name'
+  from auth.users
+  where users.id = target_user_id;
+end;
+$$;
 
 create or replace function next_ticket_number()
 returns text
@@ -312,6 +580,7 @@ create index if not exists client_service_requests_pressing_idx on client_servic
 create index if not exists client_service_requests_client_idx on client_service_requests (client_user_id, created_at desc);
 
 grant select on platform_user_accounts to authenticated;
+grant select on tenant_user_accounts to authenticated;
 grant select, insert, update, delete on pressing_invoices to authenticated;
 grant select, insert, update, delete on platform_plans to authenticated;
 grant select, insert, update, delete on platform_announcements to authenticated;
@@ -379,6 +648,16 @@ revoke all on function next_ticket_number() from public;
 revoke all on function next_ticket_number() from anon;
 revoke all on function next_ticket_number() from authenticated;
 grant execute on function next_ticket_number() to authenticated;
+
+revoke all on function create_tenant_staff_account(text, text, text) from public;
+revoke all on function create_tenant_staff_account(text, text, text) from anon;
+revoke all on function create_tenant_staff_account(text, text, text) from authenticated;
+grant execute on function create_tenant_staff_account(text, text, text) to authenticated;
+
+revoke all on function update_tenant_staff_access(uuid, text, text) from public;
+revoke all on function update_tenant_staff_access(uuid, text, text) from anon;
+revoke all on function update_tenant_staff_access(uuid, text, text) from authenticated;
+grant execute on function update_tenant_staff_access(uuid, text, text) to authenticated;
 
 insert into storage.buckets (id, name, "public", file_size_limit, allowed_mime_types)
 values (

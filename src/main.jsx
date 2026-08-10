@@ -118,6 +118,11 @@ const ROLE_LABELS = {
   client: "Client"
 };
 
+const TENANT_STAFF_ROLE_OPTIONS = [
+  { id: "admin", label: "Gerant (admin)" },
+  { id: "supervisor", label: "Proprietaire (superviseur)" }
+];
+
 const ROLE_LABELS_BY_LANGUAGE = {
   fr: ROLE_LABELS,
   en: {
@@ -596,6 +601,10 @@ function getSessionRole(session) {
   return session?.user.app_metadata?.role || session?.user.user_metadata?.role || null;
 }
 
+function getSessionAccountStatus(session) {
+  return session?.user.app_metadata?.account_status || session?.user.user_metadata?.account_status || "active";
+}
+
 function isClientRole(role) {
   return role === "client";
 }
@@ -1000,6 +1009,7 @@ const ADMIN_MENU = [
 
 const SUPERVISOR_MENU = [
   { id: "dashboard", label: "Tableau", help: "Voir la situation generale du pressing." },
+  { id: "manager", label: "Gerant", help: "Creer le compte du gerant et modifier ses acces." },
   { id: "reports", label: "Rapports", help: "Analyser les depots, retraits et montants du pressing." },
   { id: "pressingFlow", label: "Flux du pressing", help: "Suivre les depots, retraits, retards et recettes du pressing." },
   { id: "stock", label: "Stock", help: "Controler les vetements encore au pressing." },
@@ -1094,6 +1104,7 @@ const MENU_TRANSLATIONS = {
     },
     supervisor: {
       dashboard: { label: "Dashboard", help: "See the overall situation of the pressing." },
+      manager: { label: "Manager", help: "Create the manager account and update access." },
       reports: { label: "Reports", help: "Analyze deposits, pickups, and amounts." },
       pressingFlow: { label: "Pressing flow", help: "Track deposits, pickups, delays, and pressing revenue." },
       stock: { label: "Stock", help: "Check clothes still at the pressing." },
@@ -1894,6 +1905,7 @@ function fromDatabasePlatformUser(row) {
     id: row.id,
     email: row.email,
     role: row.role || "sans role",
+    accountStatus: row.account_status || "active",
     pressingId: row.pressing_id,
     pressingName: row.pressing_name,
     createdAt: row.created_at,
@@ -3226,6 +3238,197 @@ function PlatformUsersTable({ loading, platformUsers }) {
         )}
       </div>
     </section>
+  );
+}
+
+function TenantManagerAccessView({
+  loading,
+  onCreateStaffAccount,
+  onUpdateStaffAccess,
+  pressingName,
+  staffUsers,
+  supervisorEmail
+}) {
+  const [staffForm, setStaffForm] = useState({
+    email: "",
+    password: "",
+    role: "admin"
+  });
+  const [status, setStatus] = useState({ type: "", message: "" });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const managerUsers = staffUsers.filter((user) => user.role === "admin");
+
+  async function submitStaffAccount(event) {
+    event.preventDefault();
+    setStatus({ type: "", message: "" });
+
+    if (!staffForm.email.trim() || staffForm.password.length < 6) {
+      setStatus({ type: "error", message: "Saisissez un email et un mot de passe de 6 caracteres minimum." });
+      return;
+    }
+
+    setIsSubmitting(true);
+    const result = await onCreateStaffAccount(staffForm);
+    setIsSubmitting(false);
+
+    if (!result.ok) {
+      setStatus({ type: "error", message: result.message });
+      return;
+    }
+
+    setStaffForm({ email: "", password: "", role: "admin" });
+    setStatus({ type: "success", message: "Compte cree et rattache au pressing." });
+  }
+
+  async function updateAccess(user, updates) {
+    setStatus({ type: "", message: "" });
+    const result = await onUpdateStaffAccess(user, updates);
+
+    if (!result.ok) {
+      setStatus({ type: "error", message: result.message });
+      return;
+    }
+
+    setStatus({ type: "success", message: "Acces mis a jour." });
+  }
+
+  return (
+    <div className="workspace-stack">
+      <section className="report-grid" aria-label="Indicateurs gerant">
+        <article className="report-card">
+          <span>Gerants</span>
+          <strong>{managerUsers.length}</strong>
+        </article>
+        <article className="report-card">
+          <span>Actifs</span>
+          <strong>{staffUsers.filter((user) => user.accountStatus !== "suspended").length}</strong>
+        </article>
+        <article className="report-card">
+          <span>Suspendus</span>
+          <strong>{staffUsers.filter((user) => user.accountStatus === "suspended").length}</strong>
+        </article>
+        <article className="report-card wide">
+          <span>Pressing</span>
+          <strong>{pressingName}</strong>
+        </article>
+      </section>
+
+      <section className="report-section" aria-label="Creer un compte gerant">
+        <div className="section-heading">
+          <div>
+            <h2>Compte du gerant</h2>
+            <p>Le proprietaire cree le compte du gerant et garde la main sur les acces.</p>
+          </div>
+        </div>
+
+        <form className="platform-form" onSubmit={submitStaffAccount}>
+          <label>
+            Email du gerant
+            <input
+              type="email"
+              value={staffForm.email}
+              onChange={(event) =>
+                setStaffForm((current) => ({ ...current, email: event.target.value }))
+              }
+              placeholder="gerant@pressing.com"
+            />
+          </label>
+          <label>
+            Mot de passe provisoire
+            <input
+              type="password"
+              value={staffForm.password}
+              onChange={(event) =>
+                setStaffForm((current) => ({ ...current, password: event.target.value }))
+              }
+              placeholder="Minimum 6 caracteres"
+            />
+          </label>
+          <label>
+            Acces
+            <select
+              value={staffForm.role}
+              onChange={(event) =>
+                setStaffForm((current) => ({ ...current, role: event.target.value }))
+              }
+            >
+              {TENANT_STAFF_ROLE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Creation..." : "Creer le compte"}
+          </button>
+          {status.message && <div className={`password-status ${status.type}`}>{status.message}</div>}
+        </form>
+      </section>
+
+      <section className="report-section" aria-label="Comptes du pressing">
+        <div className="section-heading">
+          <div>
+            <h2>Acces du pressing</h2>
+            <p>Suspension, activation et changement de role des comptes internes.</p>
+          </div>
+          <strong>{staffUsers.length}</strong>
+        </div>
+
+        <div className="report-table">
+          <div className="platform-user-row report-row-head">
+            <span>Email</span>
+            <span>Role</span>
+            <span>Statut</span>
+            <span>Creation compte</span>
+            <span>Actions</span>
+          </div>
+
+          {loading ? (
+            <div className="empty-history">Chargement des acces...</div>
+          ) : staffUsers.length === 0 ? (
+            <div className="empty-history">Aucun compte interne a afficher.</div>
+          ) : (
+            staffUsers.map((user) => {
+              const isSelf = user.email === supervisorEmail;
+              return (
+                <article className="platform-user-row platform-row" key={user.id}>
+                  <strong>{user.email || "Email non renseigne"}</strong>
+                  <select
+                    value={user.role}
+                    disabled={isSelf}
+                    onChange={(event) => updateAccess(user, { role: event.target.value })}
+                  >
+                    {TENANT_STAFF_ROLE_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span>{user.accountStatus === "suspended" ? "Suspendu" : "Actif"}</span>
+                  <span>{formatDateTime(user.createdAt)}</span>
+                  <div className="platform-actions">
+                    <button
+                      type="button"
+                      disabled={isSelf}
+                      onClick={() =>
+                        updateAccess(user, {
+                          accountStatus:
+                            user.accountStatus === "suspended" ? "active" : "suspended"
+                        })
+                      }
+                    >
+                      {user.accountStatus === "suspended" ? "Activer" : "Suspendre"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -5596,11 +5799,13 @@ function ClientRequestsView({ clientRequests, onSendTicketToClient, onUpdateClie
 
 function SupervisorDashboard({
   onCreateSupportTicket,
+  onCreateStaffAccount,
   databaseError,
   historyLoading,
   language,
   onLanguageChange,
   onLogout,
+  onUpdateStaffAccess,
   orderHistory,
   pressingAnnouncements,
   pressingId,
@@ -5609,6 +5814,8 @@ function SupervisorDashboard({
   role,
   selectedOrder,
   setSelectedOrder,
+  staffLoading,
+  staffUsers,
   userEmail
 }) {
   const [activeView, setActiveView] = useState("dashboard");
@@ -5650,6 +5857,17 @@ function SupervisorDashboard({
       )}
 
       {activeView === "stock" && <StockView orderHistory={orderHistory} />}
+
+      {activeView === "manager" && (
+        <TenantManagerAccessView
+          loading={staffLoading}
+          onCreateStaffAccount={onCreateStaffAccount}
+          onUpdateStaffAccess={onUpdateStaffAccess}
+          pressingName={pressingName}
+          staffUsers={staffUsers}
+          supervisorEmail={userEmail}
+        />
+      )}
 
       {activeView === "pressingFlow" && (
         <PressingFlowView
@@ -5721,7 +5939,14 @@ function LoginPage({
     }
 
     const role = getSessionRole(data.session);
+    const isActiveAccount = getSessionAccountStatus(data.session) !== "suspended";
     const hasScope = Boolean(getSessionPressingId(data.session)) || isPlatformAdminRole(role);
+
+    if (!isActiveAccount) {
+      await supabase.auth.signOut();
+      setError("Ce compte est suspendu. Contactez le proprietaire du pressing.");
+      return;
+    }
 
     if (isClientRole(role)) {
       onLogin(data.session);
@@ -5954,6 +6179,7 @@ function App() {
   const [platformSupportTickets, setPlatformSupportTickets] = useState([]);
   const [platformClientProfiles, setPlatformClientProfiles] = useState([]);
   const [platformClientRequests, setPlatformClientRequests] = useState([]);
+  const [tenantStaffUsers, setTenantStaffUsers] = useState([]);
   const [pressingAnnouncements, setPressingAnnouncements] = useState([]);
   const [pressingSupportTickets, setPressingSupportTickets] = useState([]);
   const [clientProfile, setClientProfile] = useState(null);
@@ -5961,6 +6187,7 @@ function App() {
   const [pressingClientRequests, setPressingClientRequests] = useState([]);
   const [clientArticlePrices, setClientArticlePrices] = useState(createEmptyPriceOptions);
   const [platformLoading, setPlatformLoading] = useState(false);
+  const [tenantStaffLoading, setTenantStaffLoading] = useState(false);
   const [pickupQuery, setPickupQuery] = useState("");
   const [selectedPickupOrder, setSelectedPickupOrder] = useState(null);
   const [selectedReportOrder, setSelectedReportOrder] = useState(null);
@@ -6238,13 +6465,16 @@ function App() {
       const { data } = await supabase.auth.getSession();
       const session = data.session;
       const role = getSessionRole(session);
+      const isActiveAccount = getSessionAccountStatus(session) !== "suspended";
       const hasScope = Boolean(getSessionPressingId(session)) || isPlatformAdminRole(role);
 
       if (!isMounted) {
         return;
       }
 
-      setAdminSession((canAccessDashboard(role) && hasScope) || isClientRole(role) ? session : null);
+      setAdminSession(
+        isActiveAccount && ((canAccessDashboard(role) && hasScope) || isClientRole(role)) ? session : null
+      );
       setAuthLoading(false);
     }
 
@@ -6252,8 +6482,11 @@ function App() {
       data: { subscription }
     } = supabase.auth.onAuthStateChange((_event, session) => {
       const role = getSessionRole(session);
+      const isActiveAccount = getSessionAccountStatus(session) !== "suspended";
       const hasScope = Boolean(getSessionPressingId(session)) || isPlatformAdminRole(role);
-      setAdminSession((canAccessDashboard(role) && hasScope) || isClientRole(role) ? session : null);
+      setAdminSession(
+        isActiveAccount && ((canAccessDashboard(role) && hasScope) || isClientRole(role)) ? session : null
+      );
       setAuthLoading(false);
     });
 
@@ -6481,6 +6714,35 @@ function App() {
     }
 
     loadPressingPlatformMessages();
+  }, [adminSession, currentPressingId, isPlatformAdmin]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !adminSession || isPlatformAdmin || !currentPressingId) {
+      setTenantStaffUsers([]);
+      setTenantStaffLoading(false);
+      return;
+    }
+
+    async function loadTenantStaffUsers() {
+      setTenantStaffLoading(true);
+      const { data, error } = await supabase
+        .from("tenant_user_accounts")
+        .select("*")
+        .eq("pressing_id", currentPressingId)
+        .in("role", ["admin", "supervisor"])
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        setTenantStaffLoading(false);
+        setDatabaseError("Lecture des comptes internes impossible. Executez la mise a jour SQL des acces gerant.");
+        return;
+      }
+
+      setTenantStaffUsers(data.map(fromDatabasePlatformUser));
+      setTenantStaffLoading(false);
+    }
+
+    loadTenantStaffUsers();
   }, [adminSession, currentPressingId, isPlatformAdmin]);
 
   useEffect(() => {
@@ -6723,6 +6985,92 @@ function App() {
     }
 
     setPressingSupportTickets((current) => [fromDatabaseSupportTicket(data), ...current]);
+    setDatabaseError("");
+    return { ok: true };
+  }
+
+  async function createStaffAccount({ email, password, role }) {
+    if (!currentPressingId) {
+      return { ok: false, message: "Aucun pressing n'est associe a ce compte." };
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const staffRole = TENANT_STAFF_ROLE_OPTIONS.some((option) => option.id === role) ? role : "admin";
+
+    if (!isSupabaseConfigured) {
+      const localUser = fromDatabasePlatformUser({
+        id: crypto.randomUUID(),
+        email: normalizedEmail,
+        role: staffRole,
+        account_status: "active",
+        pressing_id: currentPressingId,
+        pressing_name: currentPressingName,
+        created_at: new Date().toISOString(),
+        last_sign_in_at: null
+      });
+      setTenantStaffUsers((current) => [localUser, ...current]);
+      return { ok: true };
+    }
+
+    const { data, error } = await supabase.rpc("create_tenant_staff_account", {
+      staff_email: normalizedEmail,
+      staff_password: password,
+      staff_role: staffRole
+    });
+
+    if (error) {
+      setDatabaseError(`Creation du compte gerant echouee: ${error.message}`);
+      return { ok: false, message: `Creation impossible: ${error.message}` };
+    }
+
+    const createdRow = Array.isArray(data) ? data[0] : data;
+    setTenantStaffUsers((current) => {
+      const nextUser = fromDatabasePlatformUser(createdRow);
+      return [nextUser, ...current.filter((user) => user.id !== nextUser.id)];
+    });
+    setDatabaseError("");
+    return { ok: true };
+  }
+
+  async function updateStaffAccess(user, updates) {
+    if (!currentPressingId) {
+      return { ok: false, message: "Aucun pressing n'est associe a ce compte." };
+    }
+
+    if (user.email === adminSession.user.email) {
+      return { ok: false, message: "Vous ne pouvez pas modifier vos propres acces depuis cet ecran." };
+    }
+
+    const nextRole = updates.role || user.role;
+    const nextAccountStatus = updates.accountStatus || user.accountStatus || "active";
+
+    setTenantStaffUsers((current) =>
+      current.map((staffUser) =>
+        staffUser.id === user.id
+          ? { ...staffUser, role: nextRole, accountStatus: nextAccountStatus }
+          : staffUser
+      )
+    );
+
+    if (!isSupabaseConfigured) {
+      return { ok: true };
+    }
+
+    const { data, error } = await supabase.rpc("update_tenant_staff_access", {
+      target_user_id: user.id,
+      staff_role: nextRole,
+      staff_account_status: nextAccountStatus
+    });
+
+    if (error) {
+      setDatabaseError(`Mise a jour des acces echouee: ${error.message}`);
+      return { ok: false, message: `Mise a jour impossible: ${error.message}` };
+    }
+
+    const updatedUser = fromDatabasePlatformUser(Array.isArray(data) ? data[0] : data);
+    setTenantStaffUsers((current) =>
+      current.map((staffUser) => (staffUser.id === updatedUser.id ? updatedUser : staffUser))
+    );
     setDatabaseError("");
     return { ok: true };
   }
@@ -7601,6 +7949,7 @@ function App() {
     setPlatformSupportTickets([]);
     setPlatformClientProfiles([]);
     setPlatformClientRequests([]);
+    setTenantStaffUsers([]);
     setPressingAnnouncements([]);
     setPressingSupportTickets([]);
     setClientProfile(null);
@@ -7688,9 +8037,11 @@ function App() {
         databaseError={databaseError}
         historyLoading={historyLoading}
         language={language}
+        onCreateStaffAccount={createStaffAccount}
         onCreateSupportTicket={createSupportTicket}
         onLanguageChange={changeLanguage}
         onLogout={logoutAdmin}
+        onUpdateStaffAccess={updateStaffAccess}
         orderHistory={orderHistory}
         pressingAnnouncements={pressingAnnouncements}
         pressingId={currentPressingId}
@@ -7699,6 +8050,8 @@ function App() {
         role={currentRole}
         selectedOrder={selectedReportOrder}
         setSelectedOrder={setSelectedReportOrder}
+        staffLoading={tenantStaffLoading}
+        staffUsers={tenantStaffUsers}
         userEmail={adminSession.user.email}
       />
     );
