@@ -108,37 +108,277 @@ as $$
     or (public.is_admin() and target_pressing_id = public.current_pressing_id());
 $$;
 
-create or replace view platform_user_accounts as
-select
-  users.id,
-  users.email,
-  users.created_at,
-  users.last_sign_in_at,
-  users.raw_app_meta_data ->> 'role' as role,
-  nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid as pressing_id,
-  users.raw_app_meta_data ->> 'pressing_name' as pressing_name,
-  coalesce(users.raw_app_meta_data ->> 'account_status', 'active') as account_status
-from auth.users
-where public.is_platform_admin();
+create table if not exists platform_user_account_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  email text,
+  created_at timestamptz,
+  last_sign_in_at timestamptz,
+  role text,
+  pressing_id uuid references pressings(id),
+  pressing_name text,
+  account_status text default 'active'
+);
 
-create or replace view tenant_user_accounts as
-select
-  users.id,
-  users.email,
-  users.created_at,
-  users.last_sign_in_at,
-  users.raw_app_meta_data ->> 'role' as role,
-  coalesce(users.raw_app_meta_data ->> 'account_status', 'active') as account_status,
-  nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid as pressing_id,
-  users.raw_app_meta_data ->> 'pressing_name' as pressing_name
-from auth.users
-where public.is_platform_admin()
+alter table platform_user_account_profiles add column if not exists email text;
+alter table platform_user_account_profiles add column if not exists created_at timestamptz;
+alter table platform_user_account_profiles add column if not exists last_sign_in_at timestamptz;
+alter table platform_user_account_profiles add column if not exists role text;
+alter table platform_user_account_profiles add column if not exists pressing_id uuid references pressings(id);
+alter table platform_user_account_profiles add column if not exists pressing_name text;
+alter table platform_user_account_profiles add column if not exists account_status text default 'active';
+
+create table if not exists tenant_user_account_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  email text,
+  created_at timestamptz,
+  last_sign_in_at timestamptz,
+  role text,
+  account_status text default 'active',
+  pressing_id uuid references pressings(id),
+  pressing_name text
+);
+
+alter table tenant_user_account_profiles add column if not exists email text;
+alter table tenant_user_account_profiles add column if not exists created_at timestamptz;
+alter table tenant_user_account_profiles add column if not exists last_sign_in_at timestamptz;
+alter table tenant_user_account_profiles add column if not exists role text;
+alter table tenant_user_account_profiles add column if not exists account_status text default 'active';
+alter table tenant_user_account_profiles add column if not exists pressing_id uuid references pressings(id);
+alter table tenant_user_account_profiles add column if not exists pressing_name text;
+
+alter table platform_user_account_profiles enable row level security;
+alter table tenant_user_account_profiles enable row level security;
+
+drop policy if exists "Platform admins can read user account profiles" on platform_user_account_profiles;
+create policy "Platform admins can read user account profiles"
+on platform_user_account_profiles for select
+to authenticated
+using (public.is_platform_admin());
+
+drop policy if exists "Tenant staff can read user account profiles" on tenant_user_account_profiles;
+create policy "Tenant staff can read user account profiles"
+on tenant_user_account_profiles for select
+to authenticated
+using (
+  public.is_platform_admin()
   or (
     public.current_app_role() in ('admin', 'supervisor')
     and public.current_pressing_id() is not null
     and public.is_account_active()
-    and nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid = public.current_pressing_id()
-  );
+    and pressing_id = public.current_pressing_id()
+  )
+);
+
+create or replace function sync_auth_user_profiles()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  profile_pressing_id uuid;
+  profile_pressing_name text;
+begin
+  profile_pressing_id := nullif(new.raw_app_meta_data ->> 'pressing_id', '')::uuid;
+
+  select pressings.name
+  into profile_pressing_name
+  from public.pressings
+  where pressings.id = profile_pressing_id;
+
+  profile_pressing_name := coalesce(profile_pressing_name, new.raw_app_meta_data ->> 'pressing_name');
+
+  insert into public.platform_user_account_profiles (
+    user_id,
+    email,
+    created_at,
+    last_sign_in_at,
+    role,
+    pressing_id,
+    pressing_name,
+    account_status
+  )
+  values (
+    new.id,
+    new.email,
+    new.created_at,
+    new.last_sign_in_at,
+    new.raw_app_meta_data ->> 'role',
+    profile_pressing_id,
+    profile_pressing_name,
+    coalesce(new.raw_app_meta_data ->> 'account_status', 'active')
+  )
+  on conflict (user_id) do update
+  set
+    email = excluded.email,
+    created_at = excluded.created_at,
+    last_sign_in_at = excluded.last_sign_in_at,
+    role = excluded.role,
+    pressing_id = excluded.pressing_id,
+    pressing_name = excluded.pressing_name,
+    account_status = excluded.account_status;
+
+  insert into public.tenant_user_account_profiles (
+    user_id,
+    email,
+    created_at,
+    last_sign_in_at,
+    role,
+    account_status,
+    pressing_id,
+    pressing_name
+  )
+  values (
+    new.id,
+    new.email,
+    new.created_at,
+    new.last_sign_in_at,
+    new.raw_app_meta_data ->> 'role',
+    coalesce(new.raw_app_meta_data ->> 'account_status', 'active'),
+    profile_pressing_id,
+    profile_pressing_name
+  )
+  on conflict (user_id) do update
+  set
+    email = excluded.email,
+    created_at = excluded.created_at,
+    last_sign_in_at = excluded.last_sign_in_at,
+    role = excluded.role,
+    account_status = excluded.account_status,
+    pressing_id = excluded.pressing_id,
+    pressing_name = excluded.pressing_name;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists sync_auth_user_profiles_trigger on auth.users;
+create trigger sync_auth_user_profiles_trigger
+after insert or update of email, raw_app_meta_data, last_sign_in_at
+on auth.users
+for each row
+execute function public.sync_auth_user_profiles();
+
+insert into public.platform_user_account_profiles (
+  user_id,
+  email,
+  created_at,
+  last_sign_in_at,
+  role,
+  pressing_id,
+  pressing_name,
+  account_status
+)
+select
+  users.id,
+  users.email,
+  users.created_at,
+  users.last_sign_in_at,
+  users.raw_app_meta_data ->> 'role',
+  nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid,
+  coalesce(pressings.name, users.raw_app_meta_data ->> 'pressing_name'),
+  coalesce(users.raw_app_meta_data ->> 'account_status', 'active')
+from auth.users
+left join public.pressings
+  on pressings.id = nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid
+on conflict (user_id) do update
+set
+  email = excluded.email,
+  created_at = excluded.created_at,
+  last_sign_in_at = excluded.last_sign_in_at,
+  role = excluded.role,
+  pressing_id = excluded.pressing_id,
+  pressing_name = excluded.pressing_name,
+  account_status = excluded.account_status;
+
+insert into public.tenant_user_account_profiles (
+  user_id,
+  email,
+  created_at,
+  last_sign_in_at,
+  role,
+  account_status,
+  pressing_id,
+  pressing_name
+)
+select
+  users.id,
+  users.email,
+  users.created_at,
+  users.last_sign_in_at,
+  users.raw_app_meta_data ->> 'role',
+  coalesce(users.raw_app_meta_data ->> 'account_status', 'active'),
+  nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid,
+  coalesce(pressings.name, users.raw_app_meta_data ->> 'pressing_name')
+from auth.users
+left join public.pressings
+  on pressings.id = nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid
+on conflict (user_id) do update
+set
+  email = excluded.email,
+  created_at = excluded.created_at,
+  last_sign_in_at = excluded.last_sign_in_at,
+  role = excluded.role,
+  account_status = excluded.account_status,
+  pressing_id = excluded.pressing_id,
+  pressing_name = excluded.pressing_name;
+
+create or replace function sync_pressing_name_to_user_profiles()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.platform_user_account_profiles
+  set pressing_name = new.name
+  where pressing_id = new.id;
+
+  update public.tenant_user_account_profiles
+  set pressing_name = new.name
+  where pressing_id = new.id;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists sync_pressing_name_to_user_profiles_trigger on public.pressings;
+create trigger sync_pressing_name_to_user_profiles_trigger
+after update of name
+on public.pressings
+for each row
+execute function public.sync_pressing_name_to_user_profiles();
+
+drop view if exists platform_user_accounts;
+drop view if exists tenant_user_accounts;
+
+create or replace view platform_user_accounts
+with (security_invoker = true)
+as
+select
+  user_id as id,
+  email::character varying as email,
+  created_at,
+  last_sign_in_at,
+  role,
+  pressing_id,
+  pressing_name,
+  account_status
+from public.platform_user_account_profiles;
+
+create or replace view tenant_user_accounts
+with (security_invoker = true)
+as
+select
+  user_id as id,
+  email::character varying as email,
+  created_at,
+  last_sign_in_at,
+  role,
+  account_status,
+  pressing_id,
+  pressing_name
+from public.tenant_user_account_profiles;
 
 create or replace function create_tenant_staff_account(
   staff_email text,
