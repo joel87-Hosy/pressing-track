@@ -597,12 +597,34 @@ function isPlatformAdminRole(role) {
   return role === "platform_admin";
 }
 
+function getSessionAppMetadata(session) {
+  return session?.user.app_metadata || {};
+}
+
+function getSessionUserMetadata(session) {
+  return session?.user.user_metadata || {};
+}
+
 function getSessionRole(session) {
-  return session?.user.app_metadata?.role || session?.user.user_metadata?.role || null;
+  const appRole = getSessionAppMetadata(session).role;
+  const userRole = getSessionUserMetadata(session).role;
+
+  if (appRole) {
+    return appRole;
+  }
+
+  return userRole === "client" ? userRole : null;
 }
 
 function getSessionAccountStatus(session) {
-  return session?.user.app_metadata?.account_status || session?.user.user_metadata?.account_status || "active";
+  const appMetadata = getSessionAppMetadata(session);
+  const userMetadata = getSessionUserMetadata(session);
+
+  if (appMetadata.account_status) {
+    return appMetadata.account_status;
+  }
+
+  return userMetadata.role === "client" ? userMetadata.account_status || "active" : "active";
 }
 
 function isClientRole(role) {
@@ -610,11 +632,35 @@ function isClientRole(role) {
 }
 
 function getSessionPressingId(session) {
-  return session?.user.app_metadata?.pressing_id || session?.user.user_metadata?.pressing_id || null;
+  const appMetadata = getSessionAppMetadata(session);
+  const userMetadata = getSessionUserMetadata(session);
+
+  if (appMetadata.pressing_id) {
+    return appMetadata.pressing_id;
+  }
+
+  return userMetadata.role === "client" ? userMetadata.pressing_id || null : null;
 }
 
 function getSessionPressingName(session) {
-  return session?.user.app_metadata?.pressing_name || session?.user.user_metadata?.pressing_name || "PressingTrack";
+  const appMetadata = getSessionAppMetadata(session);
+  const userMetadata = getSessionUserMetadata(session);
+
+  if (appMetadata.pressing_name) {
+    return appMetadata.pressing_name;
+  }
+
+  return userMetadata.role === "client" ? userMetadata.pressing_name || "PressingTrack" : "PressingTrack";
+}
+
+function hasDashboardRoleInUserMetadataOnly(session) {
+  const appRole = getSessionAppMetadata(session).role;
+  const userRole = getSessionUserMetadata(session).role;
+  return !appRole && canAccessDashboard(userRole);
+}
+
+function getSupabaseErrorMessage(label, error) {
+  return `${label}: ${error?.message || "erreur inconnue"}`;
 }
 
 function getInitials(name, fallback = "CL") {
@@ -5953,6 +5999,12 @@ function LoginPage({
       return;
     }
 
+    if (hasDashboardRoleInUserMetadataOnly(data.session)) {
+      await supabase.auth.signOut();
+      setError("Role admin non valide: configurez le role dans app_metadata Supabase, pas dans user_metadata.");
+      return;
+    }
+
     if (!canAccessDashboard(role) || !hasScope) {
       await supabase.auth.signOut();
       setError("Ce compte n'a pas le role admin/superviseur ou aucun pressing associe.");
@@ -6521,7 +6573,7 @@ function App() {
       const { data, error } = await query;
 
       if (error) {
-        setDatabaseError("Lecture Supabase impossible. Mode local conserve.");
+        setDatabaseError(getSupabaseErrorMessage("Lecture Supabase impossible. Mode local conserve", error));
         setHistoryLoading(false);
         return;
       }
@@ -6804,8 +6856,19 @@ function App() {
         clientProfilesError ||
         clientRequestsError
       ) {
+        const firstError =
+          pressingsError ||
+          usersError ||
+          invoicesError ||
+          announcementsError ||
+          supportTicketsError ||
+          clientProfilesError ||
+          clientRequestsError;
         setDatabaseError(
-          "Lecture plateforme incomplete. Executez la mise a jour SQL pour activer utilisateurs, clients, abonnements, messagerie et support."
+          getSupabaseErrorMessage(
+            "Lecture plateforme incomplete. Executez la mise a jour SQL pour activer utilisateurs, clients, abonnements, messagerie et support",
+            firstError
+          )
         );
         setPlatformLoading(false);
         return;
@@ -6941,8 +7004,9 @@ function App() {
       .single();
 
     if (error) {
-      setDatabaseError("Publication de l'annonce echouee dans Supabase.");
-      return { ok: false, message: "Publication impossible dans Supabase." };
+      const message = getSupabaseErrorMessage("Publication impossible dans Supabase", error);
+      setDatabaseError(message);
+      return { ok: false, message };
     }
 
     setPlatformAnnouncements((current) => [fromDatabaseAnnouncement(data), ...current]);
