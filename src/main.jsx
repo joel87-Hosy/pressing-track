@@ -2713,6 +2713,7 @@ function PlatformPressingsManager({
   const [newPressing, setNewPressing] = useState({
     name: "",
     ownerEmail: "",
+    ownerPassword: "",
     contact: "",
     planName: "Starter"
   });
@@ -2728,6 +2729,14 @@ function PlatformPressingsManager({
       return;
     }
 
+    if (!newPressing.ownerEmail.trim() || newPressing.ownerPassword.length < 6) {
+      setCreationStatus({
+        type: "error",
+        message: "Saisissez l'email du superviseur et un mot de passe de 6 caracteres minimum."
+      });
+      return;
+    }
+
     setIsCreating(true);
     const result = await onCreatePressing(newPressing);
     setIsCreating(false);
@@ -2737,8 +2746,8 @@ function PlatformPressingsManager({
       return;
     }
 
-    setNewPressing({ name: "", ownerEmail: "", contact: "", planName: "Starter" });
-    setCreationStatus({ type: "success", message: "Pressing ajoute." });
+    setNewPressing({ name: "", ownerEmail: "", ownerPassword: "", contact: "", planName: "Starter" });
+    setCreationStatus({ type: "success", message: "Pressing ajoute et compte superviseur cree." });
   }
 
   return (
@@ -2763,7 +2772,7 @@ function PlatformPressingsManager({
             />
           </label>
           <label>
-            Email proprietaire
+            Email du superviseur
             <input
               type="email"
               value={newPressing.ownerEmail}
@@ -2771,6 +2780,17 @@ function PlatformPressingsManager({
                 setNewPressing((current) => ({ ...current, ownerEmail: event.target.value }))
               }
               placeholder="admin@pressing.com"
+            />
+          </label>
+          <label>
+            Mot de passe provisoire
+            <input
+              type="password"
+              value={newPressing.ownerPassword}
+              onChange={(event) =>
+                setNewPressing((current) => ({ ...current, ownerPassword: event.target.value }))
+              }
+              placeholder="Minimum 6 caracteres"
             />
           </label>
           <label>
@@ -6938,7 +6958,7 @@ function App() {
     setDatabaseError("");
   }
 
-  async function createPlatformPressing({ name, ownerEmail, contact, planName }) {
+  async function createPlatformPressing({ name, ownerEmail, ownerPassword, contact, planName }) {
     const planFees = {
       Starter: 10000,
       Pro: 25000,
@@ -6957,24 +6977,57 @@ function App() {
     };
 
     if (!isSupabaseConfigured || !isPlatformAdmin) {
+      const pressingId = crypto.randomUUID();
       const localPressing = fromDatabasePressing({
         ...row,
-        id: crypto.randomUUID(),
+        id: pressingId,
         ticket_counter: 103,
         created_at: new Date().toISOString()
       });
+      const localSupervisor = fromDatabasePlatformUser({
+        id: crypto.randomUUID(),
+        email: ownerEmail.trim().toLowerCase(),
+        role: "supervisor",
+        account_status: "active",
+        pressing_id: pressingId,
+        pressing_name: row.name,
+        created_at: new Date().toISOString(),
+        last_sign_in_at: null
+      });
       setPlatformPressings((current) => [localPressing, ...current]);
+      setPlatformUsers((current) => [localSupervisor, ...current]);
       return { ok: true };
     }
 
-    const { data, error } = await supabase.from("pressings").insert(row).select("*").single();
+    const { data, error } = await supabase.rpc("create_platform_pressing_with_supervisor", {
+      contact_value: contact.trim() || null,
+      owner_email_value: ownerEmail.trim().toLowerCase(),
+      owner_password_value: ownerPassword,
+      plan_name_value: planName,
+      pressing_name_value: name.trim()
+    });
 
     if (error) {
-      setDatabaseError("Creation du pressing echouee dans Supabase.");
-      return { ok: false, message: "Creation impossible dans Supabase." };
+      const message = getSupabaseErrorMessage("Creation du pressing echouee dans Supabase", error);
+      setDatabaseError(message);
+      return { ok: false, message };
     }
 
-    setPlatformPressings((current) => [fromDatabasePressing(data), ...current]);
+    const createdRow = Array.isArray(data) ? data[0] : data;
+    setPlatformPressings((current) => [fromDatabasePressing(createdRow), ...current]);
+    setPlatformUsers((current) => [
+      fromDatabasePlatformUser({
+        id: createdRow.supervisor_user_id,
+        email: ownerEmail.trim().toLowerCase(),
+        role: "supervisor",
+        account_status: "active",
+        pressing_id: createdRow.id,
+        pressing_name: createdRow.name,
+        created_at: createdRow.created_at,
+        last_sign_in_at: null
+      }),
+      ...current
+    ]);
     setDatabaseError("");
     return { ok: true };
   }

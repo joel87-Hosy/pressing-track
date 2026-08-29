@@ -526,6 +526,184 @@ begin
 end;
 $$;
 
+create or replace function create_platform_pressing_with_supervisor(
+  pressing_name_value text,
+  owner_email_value text,
+  owner_password_value text,
+  contact_value text default null,
+  plan_name_value text default 'Starter'
+)
+returns table (
+  id uuid,
+  name text,
+  owner_email text,
+  billing_email text,
+  plan_name text,
+  monthly_fee integer,
+  subscription_status text,
+  subscription_started_at timestamptz,
+  trial_ends_at timestamptz,
+  ticket_counter integer,
+  created_at timestamptz,
+  updated_at timestamptz,
+  supervisor_user_id uuid
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  normalized_email text;
+  new_pressing_id uuid;
+  target_user_id uuid;
+  selected_monthly_fee integer;
+begin
+  normalized_email := lower(trim(owner_email_value));
+
+  if not public.is_platform_admin() then
+    raise exception 'platform admin role required' using errcode = '42501';
+  end if;
+
+  if trim(pressing_name_value) = '' then
+    raise exception 'pressing name required' using errcode = '22023';
+  end if;
+
+  if normalized_email = '' or length(owner_password_value) < 6 then
+    raise exception 'valid supervisor email and password required' using errcode = '22023';
+  end if;
+
+  selected_monthly_fee := case plan_name_value
+    when 'Starter' then 10000
+    when 'Pro' then 25000
+    when 'Premium' then 50000
+    else 0
+  end;
+
+  insert into public.pressings (
+    name,
+    owner_email,
+    billing_email,
+    plan_name,
+    monthly_fee,
+    subscription_status,
+    subscription_started_at,
+    trial_ends_at,
+    updated_at
+  )
+  values (
+    trim(pressing_name_value),
+    normalized_email,
+    coalesce(nullif(trim(contact_value), ''), normalized_email),
+    plan_name_value,
+    selected_monthly_fee,
+    'trial',
+    now(),
+    now() + interval '14 days',
+    now()
+  )
+  returning pressings.id into new_pressing_id;
+
+  select users.id into target_user_id
+  from auth.users
+  where lower(users.email) = normalized_email
+  limit 1;
+
+  if target_user_id is not null then
+    if coalesce((select raw_app_meta_data ->> 'pressing_id' from auth.users where users.id = target_user_id), new_pressing_id::text) <> new_pressing_id::text then
+      raise exception 'user already belongs to another pressing' using errcode = '42501';
+    end if;
+
+    update auth.users
+    set encrypted_password = crypt(owner_password_value, gen_salt('bf')),
+        email_confirmed_at = coalesce(email_confirmed_at, now()),
+        raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb)
+          || jsonb_build_object(
+            'role', 'supervisor',
+            'pressing_id', new_pressing_id::text,
+            'pressing_name', trim(pressing_name_value),
+            'account_status', 'active'
+          ),
+        updated_at = now()
+    where users.id = target_user_id;
+  else
+    target_user_id := gen_random_uuid();
+
+    insert into auth.users (
+      id,
+      aud,
+      role,
+      email,
+      encrypted_password,
+      email_confirmed_at,
+      raw_app_meta_data,
+      raw_user_meta_data,
+      created_at,
+      updated_at
+    )
+    values (
+      target_user_id,
+      'authenticated',
+      'authenticated',
+      normalized_email,
+      crypt(owner_password_value, gen_salt('bf')),
+      now(),
+      jsonb_build_object(
+        'role', 'supervisor',
+        'pressing_id', new_pressing_id::text,
+        'pressing_name', trim(pressing_name_value),
+        'account_status', 'active'
+      ),
+      jsonb_build_object('created_by_platform_admin', auth.uid()::text),
+      now(),
+      now()
+    );
+
+    insert into auth.identities (
+      provider_id,
+      user_id,
+      identity_data,
+      provider,
+      last_sign_in_at,
+      created_at,
+      updated_at
+    )
+    values (
+      target_user_id::text,
+      target_user_id,
+      jsonb_build_object(
+        'sub', target_user_id::text,
+        'email', normalized_email,
+        'email_verified', true,
+        'phone_verified', false
+      ),
+      'email',
+      now(),
+      now(),
+      now()
+    )
+    on conflict (provider, provider_id) do nothing;
+  end if;
+
+  return query
+  select
+    pressings.id,
+    pressings.name,
+    pressings.owner_email,
+    pressings.billing_email,
+    pressings.plan_name,
+    pressings.monthly_fee,
+    pressings.subscription_status,
+    pressings.subscription_started_at,
+    pressings.trial_ends_at,
+    pressings.ticket_counter,
+    pressings.created_at,
+    pressings.updated_at,
+    target_user_id
+  from public.pressings
+  where pressings.id = new_pressing_id;
+end;
+$$;
+
 create or replace function update_tenant_staff_access(
   target_user_id uuid,
   staff_role text,
@@ -894,6 +1072,11 @@ revoke all on function create_tenant_staff_account(text, text, text) from anon;
 revoke all on function create_tenant_staff_account(text, text, text) from authenticated;
 grant execute on function create_tenant_staff_account(text, text, text) to authenticated;
 
+revoke all on function create_platform_pressing_with_supervisor(text, text, text, text, text) from public;
+revoke all on function create_platform_pressing_with_supervisor(text, text, text, text, text) from anon;
+revoke all on function create_platform_pressing_with_supervisor(text, text, text, text, text) from authenticated;
+grant execute on function create_platform_pressing_with_supervisor(text, text, text, text, text) to authenticated;
+
 revoke all on function update_tenant_staff_access(uuid, text, text) from public;
 revoke all on function update_tenant_staff_access(uuid, text, text) from anon;
 revoke all on function update_tenant_staff_access(uuid, text, text) from authenticated;
@@ -1097,26 +1280,10 @@ using (client_user_id = auth.uid())
 with check (client_user_id = auth.uid());
 
 -- Creation d'un nouveau pressing client:
--- 1. Executez cette requete en changeant le nom et l'email proprietaire.
---
--- insert into pressings (name, owner_email)
--- values ('Pressing Cocody', 'admin@pressing-cocody.com')
--- returning id;
---
--- 2. Dans Supabase Dashboard > Authentication > Users, creez l'utilisateur admin avec son email et son mot de passe.
--- 3. Remplacez PRESSING_ID par l'id retourne plus haut, puis donnez au compte admin son pressing.
---
--- update auth.users
--- set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb)
---   || '{"role":"admin","pressing_id":"PRESSING_ID","pressing_name":"Pressing Cocody"}'::jsonb
--- where email = 'admin@pressing-cocody.com';
---
--- Creation d'un compte superviseur du meme pressing:
---
--- update auth.users
--- set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb)
---   || '{"role":"supervisor","pressing_id":"PRESSING_ID","pressing_name":"Pressing Cocody"}'::jsonb
--- where email = 'superviseur@pressing-cocody.com';
+-- Le super admin utilise l'ecran Pressings. L'application appelle
+-- create_platform_pressing_with_supervisor pour creer le pressing et le compte
+-- superviseur initial. Ce superviseur peut ensuite creer les comptes gerants
+-- de son pressing depuis Parametres > Acces du pressing.
 --
 -- Compte plateforme pour vous, capable de gerer tous les pressings via SQL ou un futur back-office:
 --
