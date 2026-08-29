@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">PressingTrack</title>
+  <desc id="desc">Icône de l'application PressingTrack</desc>
+  <rect width="512" height="512" rx="112" fill="#0f766e"/>
+  <path fill="#f8fafc" d="M146 132h220c22 0 40 18 40 40v168c0 22-18 40-40 40H146c-22 0-40-18-40-40V172c0-22 18-40 40-40Zm0 44v164h220V176H146Z"/>
+  <path fill="#99f6e4" d="M178 218h156v36H178v-36Zm0 68h108v36H178v-36Z"/>
+  <path fill="#f8fafc" d="M204 104c0-29 23-52 52-52s52 23 52 52h-40c0-7-5-12-12-12s-12 5-12 12h-40Z"/>
+  <path fill="#134e4a" d="M322 278c-17 0-30 13-30 30s13 30 30 30 30-13 30-30-13-30-30-30Zm0 18c7 0 12 5 12 12s-5 12-12 12-12-5-12-12 5-12 12-12Z"/>
+</svg>

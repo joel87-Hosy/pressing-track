@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { isSupabaseConfigured, supabase } from "./supabaseClient";
+import { registerServiceWorker } from "./registerServiceWorker";
 import "./styles.css";
 
 const MOCK_ARTICLES = [
@@ -8998,3 +8999,4 @@ function App() {
 }
 
 createRoot(document.getElementById("root")).render(<App />);
+registerServiceWorker();
