@@ -444,8 +444,19 @@ begin
     end if;
 
     update auth.users
-    set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb)
+    set encrypted_password = extensions.crypt(staff_password, extensions.gen_salt('bf')),
+        aud = 'authenticated',
+        role = 'authenticated',
+        email_confirmed_at = coalesce(email_confirmed_at, now()),
+        confirmation_sent_at = coalesce(confirmation_sent_at, now()),
+        confirmation_token = '',
+        recovery_token = '',
+        email_change_token_new = '',
+        email_change = '',
+        raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb)
           || jsonb_build_object(
+            'provider', 'email',
+            'providers', jsonb_build_array('email'),
             'role', staff_role,
             'pressing_id', tenant_id::text,
             'pressing_name', tenant_name,
@@ -458,30 +469,46 @@ begin
 
     insert into auth.users (
       id,
+      instance_id,
       aud,
       role,
       email,
       encrypted_password,
       email_confirmed_at,
+      confirmation_sent_at,
+      confirmation_token,
+      recovery_token,
+      email_change_token_new,
+      email_change,
       raw_app_meta_data,
       raw_user_meta_data,
+      is_super_admin,
       created_at,
       updated_at
     )
     values (
       target_user_id,
+      '00000000-0000-0000-0000-000000000000',
       'authenticated',
       'authenticated',
       normalized_email,
-      crypt(staff_password, gen_salt('bf')),
+      extensions.crypt(staff_password, extensions.gen_salt('bf')),
       now(),
+      now(),
+      '',
+      '',
+      '',
+      '',
       jsonb_build_object(
+        'provider', 'email',
+        'providers', jsonb_build_array('email'),
         'role', staff_role,
         'pressing_id', tenant_id::text,
         'pressing_name', tenant_name,
         'account_status', 'active'
       ),
       jsonb_build_object('created_by_supervisor', auth.uid()::text),
+      false,
       now(),
       now()
     );
@@ -511,6 +538,35 @@ begin
     )
     on conflict (provider, provider_id) do nothing;
   end if;
+
+  insert into auth.identities (
+    provider_id,
+    user_id,
+    identity_data,
+    provider,
+    last_sign_in_at,
+    created_at,
+    updated_at
+  )
+  values (
+    target_user_id::text,
+    target_user_id,
+    jsonb_build_object(
+      'sub', target_user_id::text,
+      'email', normalized_email,
+      'email_verified', true,
+      'phone_verified', false
+    ),
+    'email',
+    now(),
+    now(),
+    now()
+  )
+  on conflict (provider, provider_id) do update
+  set
+    user_id = excluded.user_id,
+    identity_data = excluded.identity_data,
+    updated_at = now();
 
   return query
   select
@@ -615,10 +671,19 @@ begin
     end if;
 
     update auth.users
-    set encrypted_password = crypt(owner_password_value, gen_salt('bf')),
+    set encrypted_password = extensions.crypt(owner_password_value, extensions.gen_salt('bf')),
+        aud = 'authenticated',
+        role = 'authenticated',
         email_confirmed_at = coalesce(email_confirmed_at, now()),
+        confirmation_sent_at = coalesce(confirmation_sent_at, now()),
+        confirmation_token = '',
+        recovery_token = '',
+        email_change_token_new = '',
+        email_change = '',
         raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb)
           || jsonb_build_object(
+            'provider', 'email',
+            'providers', jsonb_build_array('email'),
             'role', 'supervisor',
             'pressing_id', new_pressing_id::text,
             'pressing_name', trim(pressing_name_value),
@@ -631,30 +696,46 @@ begin
 
     insert into auth.users (
       id,
+      instance_id,
       aud,
       role,
       email,
       encrypted_password,
       email_confirmed_at,
+      confirmation_sent_at,
+      confirmation_token,
+      recovery_token,
+      email_change_token_new,
+      email_change,
       raw_app_meta_data,
       raw_user_meta_data,
+      is_super_admin,
       created_at,
       updated_at
     )
     values (
       target_user_id,
+      '00000000-0000-0000-0000-000000000000',
       'authenticated',
       'authenticated',
       normalized_email,
-      crypt(owner_password_value, gen_salt('bf')),
+      extensions.crypt(owner_password_value, extensions.gen_salt('bf')),
       now(),
+      now(),
+      '',
+      '',
+      '',
+      '',
       jsonb_build_object(
+        'provider', 'email',
+        'providers', jsonb_build_array('email'),
         'role', 'supervisor',
         'pressing_id', new_pressing_id::text,
         'pressing_name', trim(pressing_name_value),
         'account_status', 'active'
       ),
       jsonb_build_object('created_by_platform_admin', auth.uid()::text),
+      false,
       now(),
       now()
     );
@@ -684,6 +765,35 @@ begin
     )
     on conflict (provider, provider_id) do nothing;
   end if;
+
+  insert into auth.identities (
+    provider_id,
+    user_id,
+    identity_data,
+    provider,
+    last_sign_in_at,
+    created_at,
+    updated_at
+  )
+  values (
+    target_user_id::text,
+    target_user_id,
+    jsonb_build_object(
+      'sub', target_user_id::text,
+      'email', normalized_email,
+      'email_verified', true,
+      'phone_verified', false
+    ),
+    'email',
+    now(),
+    now(),
+    now()
+  )
+  on conflict (provider, provider_id) do update
+  set
+    user_id = excluded.user_id,
+    identity_data = excluded.identity_data,
+    updated_at = now();
 
   return query
   select
@@ -776,6 +886,116 @@ begin
     users.email,
     users.created_at,
     users.last_sign_in_at,
+    users.raw_app_meta_data ->> 'role',
+    coalesce(users.raw_app_meta_data ->> 'account_status', 'active'),
+    nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid,
+    users.raw_app_meta_data ->> 'pressing_name'
+  from auth.users
+  where users.id = target_user_id;
+end;
+$$;
+
+create or replace function repair_pressing_supervisor_auth_account(
+  supervisor_email_value text,
+  supervisor_password_value text
+)
+returns table (
+  id uuid,
+  email text,
+  role text,
+  account_status text,
+  pressing_id uuid,
+  pressing_name text
+)
+language plpgsql
+security definer
+set search_path = public, auth, extensions
+as $$
+declare
+  normalized_email text;
+  target_user_id uuid;
+  target_pressing_id uuid;
+  target_pressing_name text;
+begin
+  normalized_email := lower(trim(supervisor_email_value));
+
+  if not public.is_platform_admin() then
+    raise exception 'platform admin role required' using errcode = '42501';
+  end if;
+
+  if normalized_email = '' or length(supervisor_password_value) < 6 then
+    raise exception 'valid supervisor email and password required' using errcode = '22023';
+  end if;
+
+  select users.id,
+         coalesce(nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid, pressings.id),
+         coalesce(users.raw_app_meta_data ->> 'pressing_name', pressings.name)
+    into target_user_id, target_pressing_id, target_pressing_name
+  from auth.users
+  left join public.pressings
+    on lower(pressings.owner_email) = lower(users.email)
+  where lower(users.email) = normalized_email
+  limit 1;
+
+  if target_user_id is null or target_pressing_id is null then
+    raise exception 'supervisor account or pressing not found' using errcode = '22023';
+  end if;
+
+  update auth.users
+  set encrypted_password = extensions.crypt(supervisor_password_value, extensions.gen_salt('bf')),
+      aud = 'authenticated',
+      role = 'authenticated',
+      email_confirmed_at = coalesce(email_confirmed_at, now()),
+      confirmation_sent_at = coalesce(confirmation_sent_at, now()),
+      confirmation_token = '',
+      recovery_token = '',
+      email_change_token_new = '',
+      email_change = '',
+      raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb)
+        || jsonb_build_object(
+          'provider', 'email',
+          'providers', jsonb_build_array('email'),
+          'role', 'supervisor',
+          'pressing_id', target_pressing_id::text,
+          'pressing_name', target_pressing_name,
+          'account_status', 'active'
+        ),
+      updated_at = now()
+  where users.id = target_user_id;
+
+  insert into auth.identities (
+    provider_id,
+    user_id,
+    identity_data,
+    provider,
+    last_sign_in_at,
+    created_at,
+    updated_at
+  )
+  values (
+    target_user_id::text,
+    target_user_id,
+    jsonb_build_object(
+      'sub', target_user_id::text,
+      'email', normalized_email,
+      'email_verified', true,
+      'phone_verified', false
+    ),
+    'email',
+    now(),
+    now(),
+    now()
+  )
+  on conflict (provider, provider_id) do update
+  set
+    user_id = excluded.user_id,
+    identity_data = excluded.identity_data,
+    updated_at = now();
+
+  return query
+  select
+    users.id,
+    users.email,
     users.raw_app_meta_data ->> 'role',
     coalesce(users.raw_app_meta_data ->> 'account_status', 'active'),
     nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid,
@@ -1077,6 +1297,11 @@ revoke all on function create_platform_pressing_with_supervisor(text, text, text
 revoke all on function create_platform_pressing_with_supervisor(text, text, text, text, text) from anon;
 revoke all on function create_platform_pressing_with_supervisor(text, text, text, text, text) from authenticated;
 grant execute on function create_platform_pressing_with_supervisor(text, text, text, text, text) to authenticated;
+
+revoke all on function repair_pressing_supervisor_auth_account(text, text) from public;
+revoke all on function repair_pressing_supervisor_auth_account(text, text) from anon;
+revoke all on function repair_pressing_supervisor_auth_account(text, text) from authenticated;
+grant execute on function repair_pressing_supervisor_auth_account(text, text) to authenticated;
 
 revoke all on function update_tenant_staff_access(uuid, text, text) from public;
 revoke all on function update_tenant_staff_access(uuid, text, text) from anon;
