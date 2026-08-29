@@ -571,7 +571,7 @@ begin
   return query
   select
     users.id,
-    users.email,
+    users.email::text,
     users.created_at,
     users.last_sign_in_at,
     users.raw_app_meta_data ->> 'role',
@@ -883,7 +883,7 @@ begin
   return query
   select
     users.id,
-    users.email,
+    users.email::text,
     users.created_at,
     users.last_sign_in_at,
     users.raw_app_meta_data ->> 'role',
@@ -919,7 +919,7 @@ declare
 begin
   normalized_email := lower(trim(supervisor_email_value));
 
-  if not public.is_platform_admin() then
+  if auth.uid() is not null and not public.is_platform_admin() then
     raise exception 'platform admin role required' using errcode = '42501';
   end if;
 
@@ -995,7 +995,7 @@ begin
   return query
   select
     users.id,
-    users.email,
+    users.email::text,
     users.raw_app_meta_data ->> 'role',
     coalesce(users.raw_app_meta_data ->> 'account_status', 'active'),
     nullif(users.raw_app_meta_data ->> 'pressing_id', '')::uuid,
