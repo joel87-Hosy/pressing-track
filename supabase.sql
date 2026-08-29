@@ -1,4 +1,5 @@
-create extension if not exists pgcrypto;
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
 
 create sequence if not exists ticket_number_seq start 104;
 
@@ -173,7 +174,7 @@ create or replace function sync_auth_user_profiles()
 returns trigger
 language plpgsql
 security definer
-set search_path = public, auth
+set search_path = public, auth, extensions
 as $$
 declare
   profile_pressing_id uuid;
@@ -397,7 +398,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = public, auth
+set search_path = public, auth, extensions
 as $$
 declare
   tenant_id uuid;
@@ -550,7 +551,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = public, auth
+set search_path = public, auth, extensions
 as $$
 declare
   normalized_email text;
