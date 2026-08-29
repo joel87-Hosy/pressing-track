@@ -444,7 +444,7 @@ begin
     end if;
 
     update auth.users
-    set encrypted_password = extensions.crypt(staff_password, extensions.gen_salt('bf')),
+    set encrypted_password = crypt(staff_password, gen_salt('bf')),
         aud = 'authenticated',
         role = 'authenticated',
         email_confirmed_at = coalesce(email_confirmed_at, now()),
@@ -488,11 +488,11 @@ begin
     )
     values (
       target_user_id,
-      '00000000-0000-0000-0000-000000000000',
+      '00000000-0000-0000-0000-000000000000'::uuid,
       'authenticated',
       'authenticated',
       normalized_email,
-      extensions.crypt(staff_password, extensions.gen_salt('bf')),
+      crypt(staff_password, gen_salt('bf')),
       now(),
       now(),
       '',
@@ -524,7 +524,7 @@ begin
       updated_at
     )
     values (
-      target_user_id::text,
+      target_user_id,
       target_user_id::text,
       target_user_id,
       jsonb_build_object(
@@ -541,6 +541,10 @@ begin
     on conflict (provider, provider_id) do nothing;
   end if;
 
+  delete from auth.identities
+  where user_id = target_user_id
+    and provider = 'email';
+
   insert into auth.identities (
     id,
     provider_id,
@@ -552,7 +556,7 @@ begin
     updated_at
   )
   values (
-    target_user_id::text,
+    target_user_id,
     target_user_id::text,
     target_user_id,
     jsonb_build_object(
@@ -568,7 +572,6 @@ begin
   )
   on conflict (provider, provider_id) do update
   set
-    id = excluded.id,
     user_id = excluded.user_id,
     identity_data = excluded.identity_data,
     updated_at = now();
@@ -676,7 +679,7 @@ begin
     end if;
 
     update auth.users
-    set encrypted_password = extensions.crypt(owner_password_value, extensions.gen_salt('bf')),
+    set encrypted_password = crypt(owner_password_value, gen_salt('bf')),
         aud = 'authenticated',
         role = 'authenticated',
         email_confirmed_at = coalesce(email_confirmed_at, now()),
@@ -720,11 +723,11 @@ begin
     )
     values (
       target_user_id,
-      '00000000-0000-0000-0000-000000000000',
+      '00000000-0000-0000-0000-000000000000'::uuid,
       'authenticated',
       'authenticated',
       normalized_email,
-      extensions.crypt(owner_password_value, extensions.gen_salt('bf')),
+      crypt(owner_password_value, gen_salt('bf')),
       now(),
       now(),
       '',
@@ -756,7 +759,7 @@ begin
       updated_at
     )
     values (
-      target_user_id::text,
+      target_user_id,
       target_user_id::text,
       target_user_id,
       jsonb_build_object(
@@ -773,6 +776,10 @@ begin
     on conflict (provider, provider_id) do nothing;
   end if;
 
+  delete from auth.identities
+  where user_id = target_user_id
+    and provider = 'email';
+
   insert into auth.identities (
     id,
     provider_id,
@@ -784,7 +791,7 @@ begin
     updated_at
   )
   values (
-    target_user_id::text,
+    target_user_id,
     target_user_id::text,
     target_user_id,
     jsonb_build_object(
@@ -800,7 +807,6 @@ begin
   )
   on conflict (provider, provider_id) do update
   set
-    id = excluded.id,
     user_id = excluded.user_id,
     identity_data = excluded.identity_data,
     updated_at = now();
@@ -952,8 +958,8 @@ begin
   end if;
 
   update auth.users
-  set encrypted_password = extensions.crypt(supervisor_password_value, extensions.gen_salt('bf')),
-      instance_id = '00000000-0000-0000-0000-000000000000',
+  set encrypted_password = crypt(supervisor_password_value, gen_salt('bf')),
+      instance_id = '00000000-0000-0000-0000-000000000000'::uuid,
       aud = 'authenticated',
       role = 'authenticated',
       email_confirmed_at = coalesce(email_confirmed_at, now()),
@@ -974,6 +980,10 @@ begin
       updated_at = now()
   where users.id = target_user_id;
 
+  delete from auth.identities
+  where user_id = target_user_id
+    and provider = 'email';
+
   insert into auth.identities (
     id,
     provider_id,
@@ -985,7 +995,7 @@ begin
     updated_at
   )
   values (
-    target_user_id::text,
+    target_user_id,
     target_user_id::text,
     target_user_id,
     jsonb_build_object(
@@ -1001,7 +1011,6 @@ begin
   )
   on conflict (provider, provider_id) do update
   set
-    id = excluded.id,
     user_id = excluded.user_id,
     identity_data = excluded.identity_data,
     updated_at = now();
