@@ -5322,6 +5322,16 @@ function ClientPortal({
             </span>
           </button>
         ))}
+        <button
+          className="workspace-nav-item client-nav-logout"
+          type="button"
+          onClick={() => {
+            setIsClientMenuOpen(false);
+            onLogout();
+          }}
+        >
+          <span className="nav-label">{language === "en" ? "Log out" : "Deconnexion"}</span>
+        </button>
       </nav>
 
       {activeClientView === "dashboard" && (

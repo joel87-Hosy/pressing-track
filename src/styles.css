@@ -2207,13 +2207,25 @@ h2 {
 
 .client-portal-nav {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
   border: 2px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   padding: 12px;
   box-shadow: 0 8px 20px rgba(16, 32, 51, 0.07);
+}
+
+.client-nav-logout {
+  border-color: rgba(220, 38, 38, 0.22);
+  background: linear-gradient(135deg, #fff1f2 0%, #fee2e2 100%);
+  color: #9f1239;
+}
+
+.client-nav-logout:hover {
+  border-color: rgba(220, 38, 38, 0.46);
+  background: var(--red);
+  color: #ffffff;
 }
 
 .client-link-box {
