@@ -130,6 +130,39 @@ a:focus-visible {
   box-shadow: 0 0 0 4px rgba(21, 94, 239, 0.12);
 }
 
+.password-input-wrap {
+  position: relative;
+  display: block;
+}
+
+.password-input-wrap input {
+  width: 100%;
+  padding-right: 118px;
+}
+
+.login-form .password-visibility-button {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  min-height: 42px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 1000;
+  padding: 8px 12px;
+  transform: translateY(-50%);
+  box-shadow: none;
+}
+
+.login-form .password-visibility-button:hover {
+  background: var(--blue-dark);
+  box-shadow: none;
+  transform: translateY(-50%);
+}
+
 .login-form button {
   min-height: 70px;
   border: 0;

@@ -5990,6 +5990,7 @@ function LoginPage({
   const [clientPhone, setClientPhone] = useState("");
   const [clientGender, setClientGender] = useState("");
   const [isClientSignup, setIsClientSignup] = useState(Boolean(clientInvitePressingId));
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isClientInvite = Boolean(clientInvitePressingId);
@@ -6204,17 +6205,27 @@ function LoginPage({
 
           <label htmlFor="admin-password">
             Mot de passe
-            <input
-              id="admin-password"
-              autoComplete="current-password"
-              type="password"
-              value={password}
-              onChange={(event) => {
-                setPassword(event.target.value);
-                setError("");
-              }}
-              placeholder="Mot de passe"
-            />
+            <span className="password-input-wrap">
+              <input
+                id="admin-password"
+                autoComplete={isClientSignup ? "new-password" : "current-password"}
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  setError("");
+                }}
+                placeholder="Mot de passe"
+              />
+              <button
+                aria-pressed={showPassword}
+                className="password-visibility-button"
+                type="button"
+                onClick={() => setShowPassword((current) => !current)}
+              >
+                {showPassword ? "Cacher" : "Afficher"}
+              </button>
+            </span>
           </label>
 
           {error && <div className="login-error">{error}</div>}
