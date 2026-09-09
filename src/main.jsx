@@ -5879,7 +5879,7 @@ function ClientRequestsView({ clientRequests, onSendTicketToClient, onUpdateClie
                     >
                       Envoyer au compte client
                     </button>
-                    {request.ticketId && <WhatsAppSendButton key={request.ticketId} ticketId={request.ticketId} />}
+                    {(request.ticketId || request.ticketWhatsappUrl) && <WhatsAppSendButton key={request.ticketId || request.id} ticketId={request.ticketId} whatsappUrl={request.ticketWhatsappUrl} />}
                   </div>
                 </div>
               )}
@@ -8756,7 +8756,7 @@ function App() {
               <span>{getStatusLabel(validatedOrder.status)}</span>
             </div>
             <p>{validatedOrder.message}</p>
-            <WhatsAppSendButton key={validatedOrder.id} ticketId={validatedOrder.id} />
+            <WhatsAppSendButton key={validatedOrder.id} ticketId={validatedOrder.id} whatsappUrl={validatedOrder.whatsappUrl} />
           </div>
         )}
 

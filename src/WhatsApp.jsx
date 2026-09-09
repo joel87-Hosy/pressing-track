@@ -58,12 +58,13 @@ export function WhatsAppSettings() {
   );
 }
 
-export function WhatsAppSendButton({ ticketId }) {
+export function WhatsAppSendButton({ ticketId, whatsappUrl }) {
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [message, setMessage] = useState("");
   const lock = useRef(false);
+  const manualUrl = typeof whatsappUrl === "string" && /^https:\/\/wa\.me\/\d+\?text=/.test(whatsappUrl) ? whatsappUrl : null;
   async function send() {
     if (lock.current || accepted || !consent) return;
     lock.current = true;
@@ -79,7 +80,12 @@ export function WhatsAppSendButton({ ticketId }) {
   return (
     <div className="whatsapp-send">
       <label><input type="checkbox" checked={consent} disabled={busy || accepted} onChange={(event) => setConsent(event.target.checked)} /> Le client accepte de recevoir son ticket sur WhatsApp.</label>
-      <button className="picked-up-button" type="button" disabled={!ticketId || !consent || busy || accepted} onClick={send}>{busy ? "Envoi..." : accepted ? "Transmis a WhatsApp" : "Envoyer au client par WhatsApp"}</button>
+      {manualUrl && <>
+        <button className="picked-up-button" type="button" disabled={!consent || busy || accepted} onClick={() => window.open(manualUrl, "_blank", "noopener,noreferrer")}>Ouvrir WhatsApp (envoi manuel)</button>
+        <p>Le ticket est prérempli dans votre WhatsApp. Appuyez sur Envoyer pour le transmettre au client.</p>
+      </>}
+      <button className="picked-up-button" type="button" disabled={!ticketId || !consent || busy || accepted} onClick={send}>{busy ? "Envoi..." : accepted ? "Transmis a WhatsApp" : "Envoyer automatiquement par WhatsApp"}</button>
+      <p>L'envoi automatique nécessite la configuration de WhatsApp Business dans les paramètres.</p>
       <p role="status">{message}</p>
     </div>
   );
