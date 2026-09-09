@@ -4531,3 +4531,8 @@ h2 {
   background: var(--gradient-vivid);
   color: #ffffff;
 }
+
+.whatsapp-send { display: grid; gap: 10px; margin-top: 12px; }
+.whatsapp-send label { display: flex; align-items: center; gap: 8px; }
+.whatsapp-send input[type="checkbox"] { width: auto; min-height: auto; flex-shrink: 0; }
+.whatsapp-send p { margin: 0; }

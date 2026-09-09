@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { isSupabaseConfigured, supabase } from "./supabaseClient";
 import { registerServiceWorker } from "./registerServiceWorker";
 import "./styles.css";
+import { WhatsAppSettings, WhatsAppSendButton } from "./WhatsApp";
 
 const MOCK_ARTICLES = [
   { id: "shirt", name: "Chemise", icon: "CH", price: 1500 },
@@ -1051,6 +1052,7 @@ const ADMIN_MENU = [
   { id: "clients", label: "Clients", help: "Voir les clients, leurs depots et leurs montants." },
   { id: "addArticle", label: "Ajouter article", help: "Ajouter un type de vetement qui n'existe pas encore." },
   { id: "prices", label: "Prix", help: "Modifier les tarifs des articles et des services." },
+  { id: "announcements", label: "Annonces plateforme", help: "Lire les messages du Super Admin." },
   { id: "settings", label: "Parametres", help: "Gerer le profil, le lien client et les reglages du pressing." }
 ];
 
@@ -1062,6 +1064,7 @@ const SUPERVISOR_MENU = [
   { id: "stock", label: "Stock", help: "Controler les vetements encore au pressing." },
   { id: "tickets", label: "Tickets", help: "Retrouver les tickets par jour, semaine ou mois." },
   { id: "clients", label: "Clients", help: "Consulter l'activite de chaque client." },
+  { id: "announcements", label: "Annonces plateforme", help: "Lire les messages du Super Admin." },
   { id: "settings", label: "Parametres", help: "Voir les informations et options du compte." }
 ];
 
@@ -1983,8 +1986,40 @@ function getPlatformPressingRows(pressings, orderHistory, platformUsers) {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
+function useUnreadAnnouncements(pressingAnnouncements, announcementReadKey, activeView) {
+  const [readAnnouncementState, setReadAnnouncementState] = useState({ key: null, ids: [] });
+  const readAnnouncementIds = useMemo(() => {
+    if (!announcementReadKey) return [];
+    if (readAnnouncementState.key === announcementReadKey) return readAnnouncementState.ids;
+    try {
+      const stored = JSON.parse(localStorage.getItem(announcementReadKey) || "[]");
+      return Array.isArray(stored) ? stored : [];
+    } catch {
+      return [];
+    }
+  }, [announcementReadKey, readAnnouncementState]);
+  const unreadAnnouncementCount = pressingAnnouncements.filter(
+    (announcement) => !readAnnouncementIds.includes(announcement.id)
+  ).length;
+
+  useEffect(() => {
+    if (!announcementReadKey || activeView !== "announcements" || !unreadAnnouncementCount) return;
+    const ids = [...new Set([...readAnnouncementIds, ...pressingAnnouncements.map((item) => item.id)])];
+    setReadAnnouncementState({ key: announcementReadKey, ids });
+    try {
+      localStorage.setItem(announcementReadKey, JSON.stringify(ids));
+    } catch {
+      // Keep the read state in memory when browser storage is unavailable.
+    }
+  }, [activeView, announcementReadKey, pressingAnnouncements, readAnnouncementIds, unreadAnnouncementCount]);
+
+  return unreadAnnouncementCount;
+}
+
 function AppShell({
   activeView,
+  pressingAnnouncements = [],
+  announcementReadKey,
   badgeCounts = {},
   children,
   language = "fr",
@@ -1996,6 +2031,9 @@ function AppShell({
   role
 }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const unreadAnnouncementCount = useUnreadAnnouncements(pressingAnnouncements, announcementReadKey, activeView);
+  const navigationBadges = { ...badgeCounts, announcements: unreadAnnouncementCount };
 
   function selectView(viewId) {
     onSelectView(viewId);
@@ -2055,8 +2093,8 @@ function AppShell({
                 >
                   <span className="nav-label">{labelText}</span>
                   <span className="nav-item-side">
-                    {badgeCounts[item.id] > 0 && (
-                      <strong className="nav-notification-badge">{badgeCounts[item.id]}</strong>
+                    {navigationBadges[item.id] > 0 && (
+                      <strong className="nav-notification-badge">{navigationBadges[item.id]}</strong>
                     )}
                     {helpText && (
                       <span className="nav-help">
@@ -2083,6 +2121,7 @@ function AppShell({
       </aside>
 
       <main className="workspace-main">
+        {activeView === "announcements" && <PlatformAnnouncementsView pressingAnnouncements={pressingAnnouncements} />}
         {children}
         <LegalLinks language={language} />
       </main>
@@ -4334,10 +4373,43 @@ function AccountProfilePanel({ displayName, email, phone }) {
   );
 }
 
+function PlatformAnnouncementsView({ pressingAnnouncements }) {
+  return (
+    <section className="report-section" aria-label="Annonces plateforme">
+      <div className="section-heading">
+        <div>
+          <h2>Annonces plateforme</h2>
+          <p>Messages envoyes par le Super Admin.</p>
+        </div>
+        <strong>{pressingAnnouncements.length}</strong>
+      </div>
+
+      <div className="client-list">
+        {pressingAnnouncements.length === 0 ? (
+          <div className="empty-history">Aucune annonce pour le moment.</div>
+        ) : (
+          pressingAnnouncements.map((announcement) => (
+            <article className="client-item" key={announcement.id}>
+              <div>
+                <strong>{announcement.title}</strong>
+                <span>{announcement.message}</span>
+              </div>
+              <div>
+                <span>Audience: {announcement.audience}</span>
+                <span>{formatDateTime(announcement.createdAt)}</span>
+              </div>
+              <strong>{announcement.status}</strong>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
 function SettingsView({
   onCreateSupportTicket,
   clientPortalLink,
-  pressingAnnouncements = [],
   pressingName,
   pressingSupportTickets = [],
   role,
@@ -4402,6 +4474,8 @@ function SettingsView({
         </div>
       </section>
 
+      {["admin", "supervisor"].includes(role) && <WhatsAppSettings />}
+
       <AccountProfilePanel
         displayName={pressingName}
         email={userEmail}
@@ -4429,36 +4503,6 @@ function SettingsView({
 
       {showTenantMessaging && (
         <>
-          <section className="report-section" aria-label="Annonces plateforme">
-            <div className="section-heading">
-              <div>
-                <h2>Annonces plateforme</h2>
-                <p>Messages envoyes par le Super Admin.</p>
-              </div>
-              <strong>{pressingAnnouncements.length}</strong>
-            </div>
-
-            <div className="client-list">
-              {pressingAnnouncements.length === 0 ? (
-                <div className="empty-history">Aucune annonce pour le moment.</div>
-              ) : (
-                pressingAnnouncements.map((announcement) => (
-                  <article className="client-item" key={announcement.id}>
-                    <div>
-                      <strong>{announcement.title}</strong>
-                      <span>{announcement.message}</span>
-                    </div>
-                    <div>
-                      <span>Audience: {announcement.audience}</span>
-                      <span>{formatDateTime(announcement.createdAt)}</span>
-                    </div>
-                    <strong>{announcement.status}</strong>
-                  </article>
-                ))
-              )}
-            </div>
-          </section>
-
           <section className="report-section" aria-label="Support plateforme">
             <div className="section-heading">
               <div>
@@ -5051,6 +5095,8 @@ function ClientDashboard({ clientProfile, clientRequests, pressingName }) {
 }
 
 function ClientPortal({
+  pressingAnnouncements,
+  announcementReadKey,
   clientArticlePrices,
   clientProfile,
   clientRequests,
@@ -5068,9 +5114,11 @@ function ClientPortal({
     { id: "prices", label: "Tarifs" },
     { id: "request", label: "Nouvelle demande" },
     { id: "history", label: "Mes demandes" },
+    { id: "announcements", label: "Annonces plateforme", help: "Lire les messages du Super Admin." },
     { id: "account", label: "Mon profil" }
   ];
   const [activeClientView, setActiveClientView] = useState("dashboard");
+  const unreadAnnouncementCount = useUnreadAnnouncements(pressingAnnouncements, announcementReadKey, activeClientView);
   const [isClientMenuOpen, setIsClientMenuOpen] = useState(false);
   const [serviceType, setServiceType] = useState(DEFAULT_PRICE_OPTION_ID);
   const [articleId, setArticleId] = useState(MOCK_ARTICLES[0].id);
@@ -5310,6 +5358,9 @@ function ClientPortal({
           >
             <span className="nav-label">{getMenuItemLabel(item, "client", language)}</span>
             <span className="nav-item-side">
+              {item.id === "announcements" && unreadAnnouncementCount > 0 && (
+                <strong className="nav-notification-badge" aria-label={`${unreadAnnouncementCount} messages non lus`}>{unreadAnnouncementCount}</strong>
+              )}
               {item.id === "history" && historyBadgeCount > 0 && (
                 <strong className="nav-notification-badge">{historyBadgeCount}</strong>
               )}
@@ -5333,6 +5384,10 @@ function ClientPortal({
           <span className="nav-label">{language === "en" ? "Log out" : "Deconnexion"}</span>
         </button>
       </nav>
+
+      {activeClientView === "announcements" && (
+        <PlatformAnnouncementsView pressingAnnouncements={pressingAnnouncements} />
+      )}
 
       {activeClientView === "dashboard" && (
         <ClientDashboard
@@ -5824,11 +5879,7 @@ function ClientRequestsView({ clientRequests, onSendTicketToClient, onUpdateClie
                     >
                       Envoyer au compte client
                     </button>
-                    {request.ticketWhatsappUrl && (
-                      <a href={request.ticketWhatsappUrl} target="_blank" rel="noreferrer">
-                        Envoyer WhatsApp
-                      </a>
-                    )}
+                    {request.ticketId && <WhatsAppSendButton key={request.ticketId} ticketId={request.ticketId} />}
                   </div>
                 </div>
               )}
@@ -5901,6 +5952,8 @@ function SupervisorDashboard({
     <AppShell
       activeView={activeView}
       language={language}
+      pressingAnnouncements={pressingAnnouncements}
+      announcementReadKey={`pressingtrack-announcements:${pressingId}:${userEmail}`}
       menuItems={SUPERVISOR_MENU}
       onLanguageChange={onLanguageChange}
       onLogout={onLogout}
@@ -5964,7 +6017,6 @@ function SupervisorDashboard({
             pressingId ? getClientPortalLink(pressingId, pressingName) : ""
           }
           onCreateSupportTicket={onCreateSupportTicket}
-          pressingAnnouncements={pressingAnnouncements}
           pressingName={pressingName}
           pressingSupportTickets={pressingSupportTickets}
           role={role}
@@ -6780,7 +6832,11 @@ function App() {
       return;
     }
 
+    let cancelled = false;
+    let loading = false;
     async function loadPressingPlatformMessages() {
+      if (loading || cancelled) return;
+      loading = true;
       const [
         { data: announcementsData, error: announcementsError },
         { data: supportTicketsData, error: supportTicketsError }
@@ -6798,16 +6854,23 @@ function App() {
           .order("created_at", { ascending: false })
       ]);
 
+      loading = false;
+      if (cancelled) return;
       if (announcementsError || supportTicketsError) {
         setDatabaseError("Lecture messagerie/support impossible dans Supabase.");
-        return;
       }
-
-      setPressingAnnouncements(announcementsData.map(fromDatabaseAnnouncement));
-      setPressingSupportTickets(supportTicketsData.map(fromDatabaseSupportTicket));
+      if (!announcementsError) setPressingAnnouncements(announcementsData.map(fromDatabaseAnnouncement));
+      if (!supportTicketsError) setPressingSupportTickets(supportTicketsData.map(fromDatabaseSupportTicket));
     }
 
     loadPressingPlatformMessages();
+    const interval = window.setInterval(loadPressingPlatformMessages, 30000);
+    window.addEventListener("focus", loadPressingPlatformMessages);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", loadPressingPlatformMessages);
+    };
   }, [adminSession, currentPressingId, isPlatformAdmin]);
 
   useEffect(() => {
@@ -8123,6 +8186,8 @@ function App() {
   if (isClient) {
     return (
       <ClientPortal
+        pressingAnnouncements={pressingAnnouncements}
+        announcementReadKey={`pressingtrack-announcements:${currentPressingId}:${adminSession.user.email}`}
         clientArticlePrices={clientArticlePrices}
         clientProfile={clientProfile}
         clientRequests={clientRequests}
@@ -8202,6 +8267,8 @@ function App() {
         activeView={activeAdminView}
         badgeCounts={{ clientRequests: adminClientRequestBadgeCount }}
         language={language}
+        pressingAnnouncements={pressingAnnouncements}
+      announcementReadKey={`pressingtrack-announcements:${currentPressingId}:${adminSession.user.email}`}
         menuItems={ADMIN_MENU}
         onLanguageChange={changeLanguage}
         onLogout={logoutAdmin}
@@ -8450,7 +8517,6 @@ function App() {
               currentPressingId ? getClientPortalLink(currentPressingId, currentPressingName) : ""
             }
             onCreateSupportTicket={createSupportTicket}
-            pressingAnnouncements={pressingAnnouncements}
             pressingName={currentPressingName}
             pressingSupportTickets={pressingSupportTickets}
             role={currentRole}
@@ -8468,6 +8534,8 @@ function App() {
       activeView={activeAdminView}
       badgeCounts={{ clientRequests: adminClientRequestBadgeCount }}
       language={language}
+      pressingAnnouncements={pressingAnnouncements}
+      announcementReadKey={`pressingtrack-announcements:${currentPressingId}:${adminSession.user.email}`}
       menuItems={ADMIN_MENU}
       onLanguageChange={changeLanguage}
       onLogout={logoutAdmin}
@@ -8688,9 +8756,7 @@ function App() {
               <span>{getStatusLabel(validatedOrder.status)}</span>
             </div>
             <p>{validatedOrder.message}</p>
-            <a href={validatedOrder.whatsappUrl} target="_blank" rel="noreferrer">
-              Ouvrir WhatsApp
-            </a>
+            <WhatsAppSendButton key={validatedOrder.id} ticketId={validatedOrder.id} />
           </div>
         )}
 
