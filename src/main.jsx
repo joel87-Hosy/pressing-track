@@ -7222,6 +7222,48 @@ function LoginPage({
     onLogin(data.session);
   }
 
+  async function buildClientInviteRedirectUrl() {
+    const redirectBase = `${window.location.origin}${window.location.pathname}`;
+    const redirectUrl = new URL(redirectBase);
+    redirectUrl.searchParams.set("client_pressing", clientInvitePressingId);
+    redirectUrl.searchParams.set("pressing_name", clientInvitePressingName);
+    return redirectUrl.toString();
+  }
+
+  async function resendClientSignupConfirmation() {
+    if (!isSupabaseConfigured) {
+      setError("Supabase doit etre configure pour renvoyer la confirmation.");
+      return;
+    }
+
+    if (!email.trim()) {
+      setError("Saisissez un email pour recevoir l'email de confirmation.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    const redirectUrl = await buildClientInviteRedirectUrl();
+    const { error: resendError } = await supabase.auth.resend({
+      type: "signup",
+      email: email.trim(),
+      options: {
+        emailRedirectTo: redirectUrl,
+      },
+    });
+    setIsSubmitting(false);
+
+    if (resendError) {
+      setError(
+        "Impossible de renvoyer le mail de confirmation. Verifiez l'email.",
+      );
+      return;
+    }
+
+    setError(
+      "Un nouvel email de confirmation a ete envoye. Verifiez votre boite.",
+    );
+  }
+
   async function submitClientSignup(event) {
     event.preventDefault();
     setError("");
@@ -7242,16 +7284,13 @@ function LoginPage({
     }
 
     setIsSubmitting(true);
-    const redirectBase = `${window.location.origin}${window.location.pathname}`;
-    const redirectUrl = new URL(redirectBase);
-    redirectUrl.searchParams.set("client_pressing", clientInvitePressingId);
-    redirectUrl.searchParams.set("pressing_name", clientInvitePressingName);
+    const redirectUrl = await buildClientInviteRedirectUrl();
 
     const { data, error: signupError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
-        emailRedirectTo: redirectUrl.toString(),
+        emailRedirectTo: redirectUrl,
         data: {
           role: "client",
           full_name: clientName.trim(),
@@ -7274,7 +7313,7 @@ function LoginPage({
       return;
     }
 
-    setError("Compte cree. Verifiez votre email puis reconnectez-vous.");
+    setError("Compte cree. Vous pouvez maintenant vous connecter.");
     setIsClientSignup(false);
   }
 
@@ -7436,6 +7475,19 @@ function LoginPage({
             </label>
 
             {error && <div className="login-error">{error}</div>}
+
+            {isClientInvite &&
+              !isClientSignup &&
+              error.startsWith("Compte cree.") && (
+                <button
+                  className="login-link-button"
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={resendClientSignupConfirmation}
+                >
+                  Renvoyer l'email de confirmation
+                </button>
+              )}
 
             <button type="submit" disabled={isSubmitting}>
               {isSubmitting
