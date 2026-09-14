@@ -7304,7 +7304,10 @@ function LoginPage({
     setIsSubmitting(false);
 
     if (signupError) {
-      setError("Creation impossible. Verifiez l'email ou le mot de passe.");
+      setError(
+        signupError.message ||
+          "Creation impossible. Verifiez l'email ou le mot de passe.",
+      );
       return;
     }
 
